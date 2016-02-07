@@ -134,6 +134,11 @@ final class PhabricatorPeopleIconSet
         'icon' => 'fa-paw',
         'name' => pht('Animal'),
       ),
+	  array(
+        'key' => 'eminence',
+        'icon' => 'fa-eye',
+        'name' => pht('Grey Eminence'),
+      ),
     );
   }
 
