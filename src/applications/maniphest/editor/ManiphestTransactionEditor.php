@@ -29,6 +29,7 @@ final class ManiphestTransactionEditor
     $types[] = ManiphestTransaction::TYPE_PARENT;
     $types[] = ManiphestTransaction::TYPE_COLUMN;
     $types[] = ManiphestTransaction::TYPE_COVER_IMAGE;
+    $types[] = ManiphestTransaction::TYPE_POINTS;
     $types[] = PhabricatorTransactions::TYPE_VIEW_POLICY;
     $types[] = PhabricatorTransactions::TYPE_EDIT_POLICY;
 
@@ -69,6 +70,12 @@ final class ManiphestTransactionEditor
         return $object->getSubpriority();
       case ManiphestTransaction::TYPE_COVER_IMAGE:
         return $object->getCoverImageFilePHID();
+      case ManiphestTransaction::TYPE_POINTS:
+        $points = $object->getPoints();
+        if ($points !== null) {
+          $points = (double)$points;
+        }
+        return $points;
       case ManiphestTransaction::TYPE_MERGED_INTO:
       case ManiphestTransaction::TYPE_MERGED_FROM:
         return null;
@@ -100,6 +107,15 @@ final class ManiphestTransactionEditor
       case ManiphestTransaction::TYPE_PARENT:
       case ManiphestTransaction::TYPE_COLUMN:
         return $xaction->getNewValue();
+      case ManiphestTransaction::TYPE_POINTS:
+        $value = $xaction->getNewValue();
+        if (!strlen($value)) {
+          $value = null;
+        }
+        if ($value !== null) {
+          $value = (double)$value;
+        }
+        return $value;
     }
   }
 
@@ -190,6 +206,9 @@ final class ManiphestTransactionEditor
 
         $object->setProperty('cover.filePHID', $file->getPHID());
         $object->setProperty('cover.thumbnailPHID', $xform->getPHID());
+        return;
+      case ManiphestTransaction::TYPE_POINTS:
+        $object->setPoints($xaction->getNewValue());
         return;
       case ManiphestTransaction::TYPE_MERGED_FROM:
       case ManiphestTransaction::TYPE_PARENT:
@@ -884,6 +903,30 @@ final class ManiphestTransactionEditor
           }
         }
         break;
+
+      case ManiphestTransaction::TYPE_POINTS:
+        foreach ($xactions as $xaction) {
+          $new = $xaction->getNewValue();
+          if (strlen($new) && !is_numeric($new)) {
+            $errors[] = new PhabricatorApplicationTransactionValidationError(
+              $type,
+              pht('Invalid'),
+              pht('Points value must be numeric or empty.'),
+              $xaction);
+            continue;
+          }
+
+          if ((double)$new < 0) {
+            $errors[] = new PhabricatorApplicationTransactionValidationError(
+              $type,
+              pht('Invalid'),
+              pht('Points value must be nonnegative.'),
+              $xaction);
+            continue;
+          }
+        }
+        break;
+
     }
 
     return $errors;
@@ -928,8 +971,11 @@ final class ManiphestTransactionEditor
     // If the task is not assigned, not being assigned, currently open, and
     // being closed, try to assign the actor as the owner.
     if ($is_unassigned && !$any_assign && $is_open && $is_closing) {
+      $is_claim = ManiphestTaskStatus::isClaimStatus($new_status);
+
       // Don't assign the actor if they aren't a real user.
-      if ($actor_phid) {
+      // Don't claim the task if the status is configured to not claim.
+      if ($actor_phid && $is_claim) {
         $results[] = id(new ManiphestTransaction())
           ->setTransactionType(ManiphestTransaction::TYPE_OWNER)
           ->setNewValue($actor_phid);

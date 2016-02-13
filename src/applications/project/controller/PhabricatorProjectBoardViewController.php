@@ -8,7 +8,6 @@ final class PhabricatorProjectBoardViewController
   private $id;
   private $slug;
   private $queryKey;
-  private $filter;
   private $sortKey;
   private $showHidden;
 
@@ -56,10 +55,18 @@ final class PhabricatorProjectBoardViewController
           $search_engine->getQueryResultsPageURI($saved->getQueryKey())));
     }
 
-    $query_key = $request->getURIData('queryKey');
-    if (!$query_key) {
-      $query_key = 'open';
+    $query_key = $this->getDefaultFilter($project);
+
+    $request_query = $request->getStr('filter');
+    if (strlen($request_query)) {
+      $query_key = $request_query;
     }
+
+    $uri_query = $request->getURIData('queryKey');
+    if (strlen($uri_query)) {
+      $query_key = $uri_query;
+    }
+
     $this->queryKey = $query_key;
 
     $custom_query = null;
@@ -121,18 +128,37 @@ final class PhabricatorProjectBoardViewController
       ->setViewer($viewer)
       ->setBoardPHIDs(array($board_phid))
       ->setObjectPHIDs(array_keys($tasks))
+      ->setFetchAllBoards(true)
       ->executeLayout();
 
     $columns = $layout_engine->getColumns($board_phid);
-    if (!$columns) {
+    if (!$columns || !$project->getHasWorkboard()) {
+      $has_normal_columns = false;
+
+      foreach ($columns as $column) {
+        if (!$column->getProxyPHID()) {
+          $has_normal_columns = true;
+          break;
+        }
+      }
+
       $can_edit = PhabricatorPolicyFilter::hasCapability(
         $viewer,
         $project,
         PhabricatorPolicyCapability::CAN_EDIT);
-      if (!$can_edit) {
-        $content = $this->buildNoAccessContent($project);
+
+      if (!$has_normal_columns) {
+        if (!$can_edit) {
+          $content = $this->buildNoAccessContent($project);
+        } else {
+          $content = $this->buildInitializeContent($project);
+        }
       } else {
-        $content = $this->buildInitializeContent($project);
+        if (!$can_edit) {
+          $content = $this->buildDisabledContent($project);
+        } else {
+          $content = $this->buildEnableContent($project);
+        }
       }
 
       if ($content instanceof AphrontResponse) {
@@ -212,21 +238,12 @@ final class PhabricatorProjectBoardViewController
 
     $board = id(new PHUIWorkboardView())
       ->setUser($viewer)
-      ->setID($board_id);
-
-    $behavior_config = array(
-      'boardID' => $board_id,
-      'projectPHID' => $project->getPHID(),
-      'moveURI' => $this->getApplicationURI('move/'.$project->getID().'/'),
-      'createURI' => $this->getCreateURI(),
-      'uploadURI' => '/file/dropupload/',
-      'coverURI' => $this->getApplicationURI('cover/'),
-      'chunkThreshold' => PhabricatorFileStorageEngine::getChunkThreshold(),
-      'order' => $this->sortKey,
-    );
-    $this->initBehavior(
-      'project-boards',
-      $behavior_config);
+      ->setID($board_id)
+      ->addSigil('jx-workboard')
+      ->setMetadata(
+        array(
+          'boardPHID' => $project->getPHID(),
+        ));
 
     $visible_columns = array();
     $column_phids = array();
@@ -273,6 +290,9 @@ final class PhabricatorProjectBoardViewController
       ->setEditMap($task_can_edit_map)
       ->setExcludedProjectPHIDs($select_phids);
 
+    $templates = array();
+    $column_maps = array();
+    $all_tasks = array();
     foreach ($visible_columns as $column_phid => $column) {
       $column_tasks = $column_phids[$column_phid];
 
@@ -305,14 +325,17 @@ final class PhabricatorProjectBoardViewController
       $column_menu = $this->buildColumnMenu($project, $column);
       $panel->addHeaderAction($column_menu);
 
-      $tag_id = celerity_generate_unique_node_id();
-      $tag_content_id = celerity_generate_unique_node_id();
-
       $count_tag = id(new PHUITagView())
         ->setType(PHUITagView::TYPE_SHADE)
         ->setShade(PHUITagView::COLOR_BLUE)
-        ->setID($tag_id)
-        ->setName(phutil_tag('span', array('id' => $tag_content_id), '-'))
+        ->addSigil('column-points')
+        ->setName(
+          javelin_tag(
+            'span',
+            array(
+              'sigil' => 'column-points-content',
+            ),
+            pht('-')))
         ->setStyle('display: none');
 
       $panel->setHeaderTag($count_tag);
@@ -326,26 +349,52 @@ final class PhabricatorProjectBoardViewController
         ->setMetadata(
           array(
             'columnPHID' => $column->getPHID(),
-            'countTagID' => $tag_id,
-            'countTagContentID' => $tag_content_id,
             'pointLimit' => $column->getPointLimit(),
           ));
 
       foreach ($column_tasks as $task) {
-        $card = $rendering_engine->renderCard($task->getPHID());
-        $cards->addItem($card->getItem());
+        $object_phid = $task->getPHID();
+
+        $card = $rendering_engine->renderCard($object_phid);
+        $templates[$object_phid] = hsprintf('%s', $card->getItem());
+        $column_maps[$column_phid][] = $object_phid;
+
+        $all_tasks[$object_phid] = $task;
       }
 
       $panel->setCards($cards);
       $board->addPanel($panel);
     }
 
+    $behavior_config = array(
+      'moveURI' => $this->getApplicationURI('move/'.$project->getID().'/'),
+      'createURI' => $this->getCreateURI(),
+      'uploadURI' => '/file/dropupload/',
+      'coverURI' => $this->getApplicationURI('cover/'),
+      'chunkThreshold' => PhabricatorFileStorageEngine::getChunkThreshold(),
+      'pointsEnabled' => ManiphestTaskPoints::getIsEnabled(),
+
+      'boardPHID' => $project->getPHID(),
+      'order' => $this->sortKey,
+      'templateMap' => $templates,
+      'columnMaps' => $column_maps,
+      'orderMaps' => mpull($all_tasks, 'getWorkboardOrderVectors'),
+      'propertyMaps' => mpull($all_tasks, 'getWorkboardProperties'),
+
+      'boardID' => $board_id,
+      'projectPHID' => $project->getPHID(),
+    );
+    $this->initBehavior('project-boards', $behavior_config);
+
+
     $sort_menu = $this->buildSortMenu(
       $viewer,
+      $project,
       $this->sortKey);
 
     $filter_menu = $this->buildFilterMenu(
       $viewer,
+      $project,
       $custom_query,
       $search_engine,
       $query_key);
@@ -364,6 +413,9 @@ final class PhabricatorProjectBoardViewController
       ->addClass('project-board-wrapper');
 
     $nav = $this->getProfileMenu();
+    $divider = id(new PHUIListItemView())
+      ->setType(PHUIListItemView::TYPE_DIVIDER);
+    $fullscreen = $this->buildFullscreenMenu();
 
     $crumbs = $this->buildApplicationCrumbs();
     $crumbs->addTextCrumb(pht('Workboard'));
@@ -371,7 +423,9 @@ final class PhabricatorProjectBoardViewController
 
     $crumbs->addAction($sort_menu);
     $crumbs->addAction($filter_menu);
+    $crumbs->addAction($divider);
     $crumbs->addAction($manage_menu);
+    $crumbs->addAction($fullscreen);
 
     return $this->newPage()
       ->setTitle(
@@ -400,20 +454,49 @@ final class PhabricatorProjectBoardViewController
     $this->showHidden = $request->getBool('hidden');
     $this->id = $project->getID();
 
-    $sort_key = $request->getStr('order');
-    switch ($sort_key) {
+    $sort_key = $this->getDefaultSort($project);
+
+    $request_sort = $request->getStr('order');
+    if ($this->isValidSort($request_sort)) {
+      $sort_key = $request_sort;
+    }
+
+    $this->sortKey = $sort_key;
+  }
+
+  private function getDefaultSort(PhabricatorProject $project) {
+    $default_sort = $project->getDefaultWorkboardSort();
+
+    if ($this->isValidSort($default_sort)) {
+      return $default_sort;
+    }
+
+    return PhabricatorProjectColumn::DEFAULT_ORDER;
+  }
+
+  private function getDefaultFilter(PhabricatorProject $project) {
+    $default_filter = $project->getDefaultWorkboardFilter();
+
+    if (strlen($default_filter)) {
+      return $default_filter;
+    }
+
+    return 'open';
+  }
+
+  private function isValidSort($sort) {
+    switch ($sort) {
       case PhabricatorProjectColumn::ORDER_NATURAL:
       case PhabricatorProjectColumn::ORDER_PRIORITY:
-        break;
-      default:
-        $sort_key = PhabricatorProjectColumn::DEFAULT_ORDER;
-        break;
+        return true;
     }
-    $this->sortKey = $sort_key;
+
+    return false;
   }
 
   private function buildSortMenu(
     PhabricatorUser $viewer,
+    PhabricatorProject $project,
     $sort_key) {
 
     $sort_icon = id(new PHUIIconView())
@@ -444,6 +527,24 @@ final class PhabricatorProjectBoardViewController
       $items[] = $item;
     }
 
+    $id = $project->getID();
+
+    $save_uri = "default/{$id}/sort/";
+    $save_uri = $this->getApplicationURI($save_uri);
+    $save_uri = $this->getURIWithState($save_uri, $force = true);
+
+    $can_edit = PhabricatorPolicyFilter::hasCapability(
+      $viewer,
+      $project,
+      PhabricatorPolicyCapability::CAN_EDIT);
+
+    $items[] = id(new PhabricatorActionView())
+      ->setIcon('fa-floppy-o')
+      ->setName(pht('Save as Default'))
+      ->setHref($save_uri)
+      ->setWorkflow(true)
+      ->setDisabled(!$can_edit);
+
     $sort_menu = id(new PhabricatorActionListView())
       ->setUser($viewer);
     foreach ($items as $item) {
@@ -451,7 +552,7 @@ final class PhabricatorProjectBoardViewController
     }
 
     $sort_button = id(new PHUIListItemView())
-      ->setName(pht('Sort: %s', $active_order))
+      ->setName($active_order)
       ->setIcon('fa-sort-amount-asc')
       ->setHref('#')
       ->addSigil('boards-dropdown-menu')
@@ -462,8 +563,10 @@ final class PhabricatorProjectBoardViewController
 
     return $sort_button;
   }
+
   private function buildFilterMenu(
     PhabricatorUser $viewer,
+    PhabricatorProject $project,
     $custom_query,
     PhabricatorApplicationSearchEngine $engine,
     $query_key) {
@@ -506,17 +609,39 @@ final class PhabricatorProjectBoardViewController
         $uri = $engine->getQueryResultsPageURI($key);
       }
 
-      $uri = $this->getURIWithState($uri);
+      $uri = $this->getURIWithState($uri)
+        ->setQueryParam('filter', null);
       $item->setHref($uri);
 
       $items[] = $item;
     }
 
+    $id = $project->getID();
+
+    $filter_uri = $this->getApplicationURI("board/{$id}/filter/");
+    $filter_uri = $this->getURIWithState($filter_uri, $force = true);
+
     $items[] = id(new PhabricatorActionView())
       ->setIcon('fa-cog')
-      ->setHref($this->getApplicationURI('board/'.$this->id.'/filter/'))
+      ->setHref($filter_uri)
       ->setWorkflow(true)
       ->setName(pht('Advanced Filter...'));
+
+    $save_uri = "default/{$id}/filter/";
+    $save_uri = $this->getApplicationURI($save_uri);
+    $save_uri = $this->getURIWithState($save_uri, $force = true);
+
+    $can_edit = PhabricatorPolicyFilter::hasCapability(
+      $viewer,
+      $project,
+      PhabricatorPolicyCapability::CAN_EDIT);
+
+    $items[] = id(new PhabricatorActionView())
+      ->setIcon('fa-floppy-o')
+      ->setName(pht('Save as Default'))
+      ->setHref($save_uri)
+      ->setWorkflow(true)
+      ->setDisabled(!$can_edit);
 
     $filter_menu = id(new PhabricatorActionListView())
         ->setUser($viewer);
@@ -525,7 +650,7 @@ final class PhabricatorProjectBoardViewController
     }
 
     $filter_button = id(new PHUIListItemView())
-      ->setName(pht('Filter: %s', $active_filter))
+      ->setName($active_filter)
       ->setIcon('fa-search')
       ->setHref('#')
       ->addSigil('boards-dropdown-menu')
@@ -544,6 +669,12 @@ final class PhabricatorProjectBoardViewController
     $request = $this->getRequest();
     $viewer = $request->getUser();
 
+    $id = $project->getID();
+
+    $disable_uri = $this->getApplicationURI("board/{$id}/disable/");
+    $add_uri = $this->getApplicationURI("board/{$id}/edit/");
+    $reorder_uri = $this->getApplicationURI("board/{$id}/reorder/");
+
     $can_edit = PhabricatorPolicyFilter::hasCapability(
       $viewer,
       $project,
@@ -554,14 +685,14 @@ final class PhabricatorProjectBoardViewController
     $manage_items[] = id(new PhabricatorActionView())
       ->setIcon('fa-plus')
       ->setName(pht('Add Column'))
-      ->setHref($this->getApplicationURI('board/'.$this->id.'/edit/'))
+      ->setHref($add_uri)
       ->setDisabled(!$can_edit)
       ->setWorkflow(!$can_edit);
 
     $manage_items[] = id(new PhabricatorActionView())
       ->setIcon('fa-exchange')
       ->setName(pht('Reorder Columns'))
-      ->setHref($this->getApplicationURI('board/'.$this->id.'/reorder/'))
+      ->setHref($reorder_uri)
       ->setDisabled(!$can_edit)
       ->setWorkflow(true);
 
@@ -595,6 +726,13 @@ final class PhabricatorProjectBoardViewController
       ->setHref($batch_edit_uri)
       ->setDisabled(!$can_batch_edit);
 
+    $manage_items[] = id(new PhabricatorActionView())
+      ->setIcon('fa-ban')
+      ->setName(pht('Disable Workboard'))
+      ->setHref($disable_uri)
+      ->setWorkflow(true)
+      ->setDisabled(!$can_edit);
+
     $manage_menu = id(new PhabricatorActionListView())
         ->setUser($viewer);
     foreach ($manage_items as $item) {
@@ -602,16 +740,36 @@ final class PhabricatorProjectBoardViewController
     }
 
     $manage_button = id(new PHUIListItemView())
-      ->setName(pht('Manage Board'))
       ->setIcon('fa-cog')
       ->setHref('#')
       ->addSigil('boards-dropdown-menu')
+      ->addSigil('has-tooltip')
       ->setMetadata(
         array(
+          'tip' => pht('Manage'),
+          'align' => 'S',
           'items' => hsprintf('%s', $manage_menu),
         ));
 
     return $manage_button;
+  }
+
+  private function buildFullscreenMenu() {
+
+    $up = id(new PHUIListItemView())
+      ->setIcon('fa-arrows-alt')
+      ->setHref('#')
+      ->addClass('phui-workboard-expand-icon')
+      ->addSigil('jx-toggle-class')
+      ->addSigil('has-tooltip')
+      ->setMetaData(array(
+        'tip' => pht('Fullscreen'),
+        'map' => array(
+          'phabricator-standard-page' => 'phui-workboard-fullscreen',
+        ),
+      ));
+
+    return $up;
   }
 
   private function buildColumnMenu(
@@ -642,6 +800,7 @@ final class PhabricatorProjectBoardViewController
       ->setMetadata(
         array(
           'columnPHID' => $column->getPHID(),
+          'boardPHID' => $project->getPHID(),
           'projectPHID' => $default_phid,
         ));
 
@@ -714,20 +873,29 @@ final class PhabricatorProjectBoardViewController
    * the rest of the board state persistent. If no URI is provided, this method
    * starts with the request URI.
    *
-   * @param string|null   URI to add state parameters to.
-   * @return PhutilURI    URI with state parameters.
+   * @param string|null URI to add state parameters to.
+   * @param bool True to explicitly include all state.
+   * @return PhutilURI URI with state parameters.
    */
-  private function getURIWithState($base = null) {
+  private function getURIWithState($base = null, $force = false) {
+    $project = $this->getProject();
+
     if ($base === null) {
       $base = $this->getRequest()->getRequestURI();
     }
 
     $base = new PhutilURI($base);
 
-    if ($this->sortKey != PhabricatorProjectColumn::DEFAULT_ORDER) {
+    if ($force || ($this->sortKey != $this->getDefaultSort($project))) {
       $base->setQueryParam('order', $this->sortKey);
     } else {
       $base->setQueryParam('order', null);
+    }
+
+    if ($force || ($this->queryKey != $this->getDefaultFilter($project))) {
+      $base->setQueryParam('filter', $this->queryKey);
+    } else {
+      $base->setQueryParam('filter', null);
     }
 
     $base->setQueryParam('hidden', $this->showHidden ? 'true' : null);
@@ -849,6 +1017,61 @@ final class PhabricatorProjectBoardViewController
           'The workboard for this project has not been created yet, '.
           'but you do not have permission to create it. Only users '.
           'who can edit this project can create a workboard for it.'))
+      ->addCancelButton($profile_uri);
+  }
+
+
+  private function buildEnableContent(PhabricatorProject $project) {
+    $request = $this->getRequest();
+    $viewer = $this->getViewer();
+
+    $id = $project->getID();
+    $profile_uri = $this->getApplicationURI("profile/{$id}/");
+    $board_uri = $this->getApplicationURI("board/{$id}/");
+
+    if ($request->isFormPost()) {
+      $xactions = array();
+
+      $xactions[] = id(new PhabricatorProjectTransaction())
+        ->setTransactionType(PhabricatorProjectTransaction::TYPE_HASWORKBOARD)
+        ->setNewValue(1);
+
+      id(new PhabricatorProjectTransactionEditor())
+        ->setActor($viewer)
+        ->setContentSourceFromRequest($request)
+        ->setContinueOnNoEffect(true)
+        ->setContinueOnMissingFields(true)
+        ->applyTransactions($project, $xactions);
+
+      return id(new AphrontRedirectResponse())
+        ->setURI($board_uri);
+    }
+
+    return $this->newDialog()
+      ->setTitle(pht('Workboard Disabled'))
+      ->addHiddenInput('initialize', 1)
+      ->appendParagraph(
+        pht(
+          'This workboard has been disabled, but can be restored to its '.
+          'former glory.'))
+      ->addCancelButton($profile_uri)
+      ->addSubmitButton(pht('Enable Workboard'));
+  }
+
+  private function buildDisabledContent(PhabricatorProject $project) {
+    $viewer = $this->getViewer();
+
+    $id = $project->getID();
+
+    $profile_uri = $this->getApplicationURI("profile/{$id}/");
+
+    return $this->newDialog()
+      ->setTitle(pht('Workboard Disabled'))
+      ->appendParagraph(
+        pht(
+          'This workboard has been disabled, and you do not have permission '.
+          'to enable it. Only users who can edit this project can restore '.
+          'the workboard.'))
       ->addCancelButton($profile_uri);
   }
 
