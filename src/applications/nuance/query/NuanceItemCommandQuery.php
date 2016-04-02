@@ -1,27 +1,27 @@
 <?php
 
-final class NuanceRequestorQuery
+final class NuanceItemCommandQuery
   extends NuanceQuery {
 
   private $ids;
-  private $phids;
+  private $itemPHIDs;
 
   public function withIDs(array $ids) {
     $this->ids = $ids;
     return $this;
   }
 
-  public function withPHIDs(array $phids) {
-    $this->phids = $phids;
+  public function withItemPHIDs(array $item_phids) {
+    $this->itemPHIDs = $item_phids;
     return $this;
   }
 
-  public function newObject() {
-    return new NuanceRequestor();
+  public function newResultObject() {
+    return new NuanceItemCommand();
   }
 
   protected function loadPage() {
-    return $this->loadStandardPage($this->newObject());
+    return $this->loadStandardPage($this->newResultObject());
   }
 
   protected function buildWhereClauseParts(AphrontDatabaseConnection $conn) {
@@ -34,11 +34,11 @@ final class NuanceRequestorQuery
         $this->ids);
     }
 
-    if ($this->phids !== null) {
+    if ($this->itemPHIDs !== null) {
       $where[] = qsprintf(
         $conn,
-        'phid IN (%Ls)',
-        $this->phids);
+        'itemPHID IN (%Ls)',
+        $this->itemPHIDs);
     }
 
     return $where;
