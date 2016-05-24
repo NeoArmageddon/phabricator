@@ -1011,6 +1011,39 @@ final class PhabricatorProjectCoreTestCase extends PhabricatorTestCase {
       $column->getPHID(),
     );
     $this->assertColumns($expect, $user, $board, $task);
+
+
+    // Move the task within the "Milestone" column. This should not affect
+    // the projects the task is tagged with. See T10912.
+    $task_a = $task;
+
+    $task_b = $this->newTask($user, array($backlog));
+    $this->moveToColumn($user, $board, $task_b, $backlog, $column);
+
+    $a_options = array(
+      'beforePHID' => $task_b->getPHID(),
+    );
+
+    $b_options = array(
+      'beforePHID' => $task_a->getPHID(),
+    );
+
+    $old_projects = $this->getTaskProjects($task);
+
+    // Move the target task to the top.
+    $this->moveToColumn($user, $board, $task_a, $column, $column, $a_options);
+    $new_projects = $this->getTaskProjects($task_a);
+    $this->assertEqual($old_projects, $new_projects);
+
+    // Move the other task.
+    $this->moveToColumn($user, $board, $task_b, $column, $column, $b_options);
+    $new_projects = $this->getTaskProjects($task_a);
+    $this->assertEqual($old_projects, $new_projects);
+
+    // Move the target task again.
+    $this->moveToColumn($user, $board, $task_a, $column, $column, $a_options);
+    $new_projects = $this->getTaskProjects($task_a);
+    $this->assertEqual($old_projects, $new_projects);
   }
 
   public function testColumnExtendedPolicies() {
@@ -1072,18 +1105,13 @@ final class PhabricatorProjectCoreTestCase extends PhabricatorTestCase {
       $options = array();
     }
 
+    $value = array(
+      'columnPHID' => $dst->getPHID(),
+    ) + $options;
+
     $xactions[] = id(new ManiphestTransaction())
-      ->setTransactionType(ManiphestTransaction::TYPE_PROJECT_COLUMN)
-      ->setOldValue(
-        array(
-          'projectPHID' => $board->getPHID(),
-          'columnPHIDs' => array($src->getPHID()),
-        ))
-      ->setNewValue(
-        array(
-          'projectPHID' => $board->getPHID(),
-          'columnPHIDs' => array($dst->getPHID()),
-        ) + $options);
+      ->setTransactionType(PhabricatorTransactions::TYPE_COLUMNS)
+      ->setNewValue(array($value));
 
     $editor = id(new ManiphestTransactionEditor())
       ->setActor($viewer)

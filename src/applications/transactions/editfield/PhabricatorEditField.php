@@ -16,6 +16,7 @@ abstract class PhabricatorEditField extends Phobject {
   private $isRequired;
   private $previewPanel;
   private $controlID;
+  private $controlInstructions;
 
   private $description;
   private $conduitDescription;
@@ -24,6 +25,7 @@ abstract class PhabricatorEditField extends Phobject {
 
   private $commentActionLabel;
   private $commentActionValue;
+  private $commentActionOrder = 1000;
   private $hasCommentActionValue;
 
   private $isLocked;
@@ -243,6 +245,15 @@ abstract class PhabricatorEditField extends Phobject {
     return $this->commentActionLabel;
   }
 
+  public function setCommentActionOrder($order) {
+    $this->commentActionOrder = $order;
+    return $this;
+  }
+
+  public function getCommentActionOrder() {
+    return $this->commentActionOrder;
+  }
+
   public function setCommentActionValue($comment_action_value) {
     $this->hasCommentActionValue = true;
     $this->commentActionValue = $comment_action_value;
@@ -260,6 +271,15 @@ abstract class PhabricatorEditField extends Phobject {
 
   public function getPreviewPanel() {
     return $this->previewPanel;
+  }
+
+  public function setControlInstructions($control_instructions) {
+    $this->controlInstructions = $control_instructions;
+    return $this;
+  }
+
+  public function getControlInstructions() {
+    return $this->controlInstructions;
   }
 
   protected function newControl() {
@@ -346,6 +366,11 @@ abstract class PhabricatorEditField extends Phobject {
           $control
             ->setError(pht('Locked'));
         }
+      }
+
+      $instructions = $this->getControlInstructions();
+      if (strlen($instructions)) {
+        $form->appendRemarkupInstructions($instructions);
       }
 
       $form->appendControl($control);
@@ -686,7 +711,8 @@ abstract class PhabricatorEditField extends Phobject {
     $action
       ->setKey($this->getKey())
       ->setLabel($label)
-      ->setValue($this->getValueForCommentAction($value));
+      ->setValue($this->getValueForCommentAction($value))
+      ->setOrder($this->getCommentActionOrder());
 
     return $action;
   }

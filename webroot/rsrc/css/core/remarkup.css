@@ -234,6 +234,18 @@
   background: #ffaaaa;
 }
 
+.phabricator-remarkup .phriction-link {
+  font-weight: bold;
+}
+
+.phabricator-remarkup .phriction-link-missing {
+  color: {$red};
+}
+
+.phabricator-remarkup .phriction-link-lock {
+  color: {$greytext};
+}
+
 .phabricator-remarkup-mention-nopermission .phui-tag-core {
   background: {$lightgreybackground};
   color: {$lightgreytext};
@@ -341,12 +353,14 @@
   box-shadow: 1px 1px 2px rgba({$alphablack}, 0.20);
 }
 
-.phabricator-remarkup-embed-image-full {
+.phabricator-remarkup-embed-image-full,
+.phabricator-remarkup-embed-image-wide {
   display: inline-block;
   max-width: 100%;
 }
 
-.phabricator-remarkup-embed-image-full img {
+.phabricator-remarkup-embed-image-full img,
+.phabricator-remarkup-embed-image-wide img {
   height: auto;
   max-width: 100%;
 }

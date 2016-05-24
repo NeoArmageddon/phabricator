@@ -254,6 +254,8 @@ final class PhabricatorMarkupEngine extends Phobject {
       }
     }
 
+    $is_readonly = PhabricatorEnv::isReadOnly();
+
     foreach ($objects as $key => $info) {
       // False check in case MySQL doesn't support unicode characters
       // in the string (T1191), resulting in unserialize returning false.
@@ -279,7 +281,7 @@ final class PhabricatorMarkupEngine extends Phobject {
         ->setCacheData($data)
         ->setMetadata($metadata);
 
-      if (isset($use_cache[$key])) {
+      if (isset($use_cache[$key]) && !$is_readonly) {
         // This is just filling a cache and always safe, even on a read pathway.
         $unguarded = AphrontWriteGuard::beginScopedUnguardedWrites();
           $blocks[$key]->replace();
@@ -468,6 +470,7 @@ final class PhabricatorMarkupEngine extends Phobject {
     $engine = new PhutilRemarkupEngine();
 
     $engine->setConfig('preserve-linebreaks', $options['preserve-linebreaks']);
+
     $engine->setConfig('pygments.enabled', $options['pygments']);
     $engine->setConfig(
       'uri.allowed-protocols',
@@ -477,6 +480,10 @@ final class PhabricatorMarkupEngine extends Phobject {
     $engine->setConfig(
       'syntax-highlighter.engine',
       $options['syntax-highlighter.engine']);
+
+    $style_map = id(new PhabricatorDefaultSyntaxStyle())
+      ->getRemarkupStyleMap();
+    $engine->setConfig('phutil.codeblock.style-map', $style_map);
 
     $engine->setConfig('uri.full', $options['uri.full']);
 

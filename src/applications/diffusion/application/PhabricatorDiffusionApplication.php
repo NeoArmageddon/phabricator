@@ -55,11 +55,10 @@ final class PhabricatorDiffusionApplication extends PhabricatorApplication {
         => 'DiffusionCommitController',
 
       '/diffusion/' => array(
-        '(?:query/(?P<queryKey>[^/]+)/)?'
+        $this->getQueryRoutePattern()
           => 'DiffusionRepositoryListController',
-        'new/' => 'DiffusionRepositoryNewController',
-        '(?P<edit>create)/' => 'DiffusionRepositoryCreateController',
-        '(?P<edit>import)/' => 'DiffusionRepositoryCreateController',
+        $this->getEditRoutePattern('edit/') =>
+          'DiffusionRepositoryEditController',
         'pushlog/' => array(
           '(?:query/(?P<queryKey>[^/]+)/)?' => 'DiffusionPushLogListController',
           'view/(?P<id>\d+)/' => 'DiffusionPushEventViewController',
@@ -87,32 +86,25 @@ final class PhabricatorDiffusionApplication extends PhabricatorApplication {
             => 'DiffusionCommitTagsController',
           'commit/(?P<commit>[a-z0-9]+)/edit/'
             => 'DiffusionCommitEditController',
+          'manage/(?:(?P<panel>[^/]+)/)?'
+            => 'DiffusionRepositoryManagePanelsController',
+          'uri/' => array(
+            'view/(?P<id>[0-9]\d*)/' => 'DiffusionRepositoryURIViewController',
+            'disable/(?P<id>[0-9]\d*)/'
+              => 'DiffusionRepositoryURIDisableController',
+            $this->getEditRoutePattern('edit/')
+              => 'DiffusionRepositoryURIEditController',
+            'credential/(?P<id>[0-9]\d*)/(?P<action>edit|remove)/'
+              => 'DiffusionRepositoryURICredentialController',
+          ),
           'edit/' => array(
-            '' => 'DiffusionRepositoryEditMainController',
-            'basic/' => 'DiffusionRepositoryEditBasicController',
-            'encoding/' => 'DiffusionRepositoryEditEncodingController',
             'activate/' => 'DiffusionRepositoryEditActivateController',
             'dangerous/' => 'DiffusionRepositoryEditDangerousController',
-            'branches/' => 'DiffusionRepositoryEditBranchesController',
-            'subversion/' => 'DiffusionRepositoryEditSubversionController',
-            'actions/' => 'DiffusionRepositoryEditActionsController',
-            '(?P<edit>remote)/' => 'DiffusionRepositoryCreateController',
-            '(?P<edit>policy)/' => 'DiffusionRepositoryCreateController',
-            'storage/' => 'DiffusionRepositoryEditStorageController',
             'delete/' => 'DiffusionRepositoryEditDeleteController',
-            'hosting/' => 'DiffusionRepositoryEditHostingController',
-            '(?P<serve>serve)/' => 'DiffusionRepositoryEditHostingController',
             'update/' => 'DiffusionRepositoryEditUpdateController',
-            'symbol/' => 'DiffusionRepositorySymbolsController',
-            'staging/' => 'DiffusionRepositoryEditStagingController',
-            'automation/' => 'DiffusionRepositoryEditAutomationController',
             'testautomation/' => 'DiffusionRepositoryTestAutomationController',
           ),
           'pathtree/(?P<dblob>.*)' => 'DiffusionPathTreeController',
-          'mirror/' => array(
-            'edit/(?:(?P<id>\d+)/)?' => 'DiffusionMirrorEditController',
-            'delete/(?P<id>\d+)/' => 'DiffusionMirrorDeleteController',
-          ),
         ),
 
         // NOTE: This must come after the rule above; it just gives us a

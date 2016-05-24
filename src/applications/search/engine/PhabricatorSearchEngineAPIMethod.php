@@ -37,7 +37,10 @@ abstract class PhabricatorSearchEngineAPIMethod
   }
 
   public function getMethodStatusDescription() {
-    return pht('ApplicationSearch methods are highly unstable.');
+    return pht(
+      'ApplicationSearch methods are fairly stable, but were introduced '.
+      'relatively recently and may continue to evolve as more applications '.
+      'adopt them.');
   }
 
   final protected function defineParamTypes() {
@@ -151,6 +154,7 @@ EOTEXT
     return id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Builtin and Saved Queries'))
       ->setCollapsed(true)
+      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
       ->appendChild($this->buildRemarkup($info))
       ->appendChild($table);
   }
@@ -236,6 +240,7 @@ EOTEXT
     return id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Custom Query Constraints'))
       ->setCollapsed(true)
+      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
       ->appendChild($this->buildRemarkup($info))
       ->appendChild($table);
   }
@@ -342,6 +347,7 @@ EOTEXT
     return id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Result Ordering'))
       ->setCollapsed(true)
+      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
       ->appendChild($this->buildRemarkup($orders_info))
       ->appendChild($orders_table)
       ->appendChild($this->buildRemarkup($columns_info))
@@ -422,6 +428,7 @@ EOTEXT
     return id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Object Fields'))
       ->setCollapsed(true)
+      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
       ->appendChild($this->buildRemarkup($info))
       ->appendChild($table);
   }
@@ -494,6 +501,7 @@ EOTEXT
     }
 
     $table = id(new AphrontTableView($rows))
+      ->setNoDataString(pht('This call does not support any attachments.'))
       ->setHeaders(
         array(
           pht('Key'),
@@ -510,6 +518,7 @@ EOTEXT
     return id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Attachments'))
       ->setCollapsed(true)
+      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
       ->appendChild($this->buildRemarkup($info))
       ->appendChild($table);
   }
@@ -580,6 +589,7 @@ EOTEXT
     return id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Paging and Limits'))
       ->setCollapsed(true)
+      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
       ->appendChild($this->buildRemarkup($info));
   }
 
@@ -587,6 +597,11 @@ EOTEXT
     $viewer = $this->getViewer();
 
     $view = new PHUIRemarkupView($viewer, $remarkup);
+
+    $view->setRemarkupOptions(
+      array(
+        PHUIRemarkupView::OPTION_PRESERVE_LINEBREAKS => false,
+      ));
 
     return id(new PHUIBoxView())
       ->appendChild($view)

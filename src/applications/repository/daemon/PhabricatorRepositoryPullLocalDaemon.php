@@ -74,7 +74,9 @@ final class PhabricatorRepositoryPullLocalDaemon
 
     while (!$this->shouldExit()) {
       PhabricatorCaches::destroyRequestCache();
-      $pullable = $this->loadPullableRepositories($include, $exclude);
+      $device = AlmanacKeys::getLiveDevice();
+
+      $pullable = $this->loadPullableRepositories($include, $exclude, $device);
 
       // If any repositories have the NEEDS_UPDATE flag set, pull them
       // as soon as possible.
@@ -297,7 +299,11 @@ final class PhabricatorRepositoryPullLocalDaemon
   /**
    * @task pull
    */
-  private function loadPullableRepositories(array $include, array $exclude) {
+  private function loadPullableRepositories(
+    array $include,
+    array $exclude,
+    AlmanacDevice $device = null) {
+
     $query = id(new PhabricatorRepositoryQuery())
       ->setViewer($this->getViewer());
 
@@ -346,6 +352,19 @@ final class PhabricatorRepositoryPullLocalDaemon
       if (!$repository->isTracked()) {
         unset($repositories[$key]);
       }
+    }
+
+    $viewer = $this->getViewer();
+
+    $filter = id(new DiffusionLocalRepositoryFilter())
+      ->setViewer($viewer)
+      ->setDevice($device)
+      ->setRepositories($repositories);
+
+    $repositories = $filter->execute();
+
+    foreach ($filter->getRejectionReasons() as $reason) {
+      $this->log($reason);
     }
 
     // Shuffle the repositories, then re-key the array since shuffle()

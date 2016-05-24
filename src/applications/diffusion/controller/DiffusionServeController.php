@@ -164,7 +164,14 @@ final class DiffusionServeController extends DiffusionController {
 
     // If authentication credentials have been provided, try to find a user
     // that actually matches those credentials.
-    if (isset($_SERVER['PHP_AUTH_USER']) && isset($_SERVER['PHP_AUTH_PW'])) {
+
+    // We require both the username and password to be nonempty, because Git
+    // won't prompt users who provide a username but no password otherwise.
+    // See T10797 for discussion.
+
+    $have_user = strlen(idx($_SERVER, 'PHP_AUTH_USER'));
+    $have_pass = strlen(idx($_SERVER, 'PHP_AUTH_PW'));
+    if ($have_user && $have_pass) {
       $username = $_SERVER['PHP_AUTH_USER'];
       $password = new PhutilOpaqueEnvelope($_SERVER['PHP_AUTH_PW']);
 
@@ -212,6 +219,7 @@ final class DiffusionServeController extends DiffusionController {
       $repository = id(new PhabricatorRepositoryQuery())
         ->setViewer($viewer)
         ->withIdentifiers(array($identifier))
+        ->needURIs(true)
         ->executeOne();
       if (!$repository) {
         return new PhabricatorVCSResponse(
@@ -259,22 +267,32 @@ final class DiffusionServeController extends DiffusionController {
       // token from SSH. If they're using HTTP username + password auth, they
       // have to obey the normal HTTP rules.
     } else {
-      switch ($repository->getServeOverHTTP()) {
-        case PhabricatorRepository::SERVE_READONLY:
-          if ($is_push) {
-            return new PhabricatorVCSResponse(
-              403,
-              pht('This repository is read-only over HTTP.'));
-          }
-          break;
-        case PhabricatorRepository::SERVE_READWRITE:
-          // We'll check for push capability below.
-          break;
-        case PhabricatorRepository::SERVE_OFF:
-        default:
+      // For now, we don't distinguish between HTTP and HTTPS-originated
+      // requests that are proxied within the cluster, so the user can connect
+      // with HTTPS but we may be on HTTP by the time we reach this part of
+      // the code. Allow things to move forward as long as either protocol
+      // can be served.
+      $proto_https = PhabricatorRepositoryURI::BUILTIN_PROTOCOL_HTTPS;
+      $proto_http = PhabricatorRepositoryURI::BUILTIN_PROTOCOL_HTTP;
+
+      $can_read =
+        $repository->canServeProtocol($proto_https, false) ||
+        $repository->canServeProtocol($proto_http, false);
+      if (!$can_read) {
+        return new PhabricatorVCSResponse(
+          403,
+          pht('This repository is not available over HTTP.'));
+      }
+
+      if ($is_push) {
+        $can_write =
+          $repository->canServeProtocol($proto_https, true) ||
+          $repository->canServeProtocol($proto_http, true);
+        if (!$can_write) {
           return new PhabricatorVCSResponse(
             403,
-            pht('This repository is not available over HTTP.'));
+            pht('This repository is read-only over HTTP.'));
+        }
       }
     }
 
@@ -531,10 +549,39 @@ final class DiffusionServeController extends DiffusionController {
     $command = csprintf('%s', $bin);
     $command = PhabricatorDaemon::sudoCommandAsDaemonUser($command);
 
-    list($err, $stdout, $stderr) = id(new ExecFuture('%C', $command))
-      ->setEnv($env, true)
-      ->write($input)
-      ->resolve();
+    $unguarded = AphrontWriteGuard::beginScopedUnguardedWrites();
+
+    $cluster_engine = id(new DiffusionRepositoryClusterEngine())
+      ->setViewer($viewer)
+      ->setRepository($repository);
+
+    $did_write_lock = false;
+    if ($this->isReadOnlyRequest($repository)) {
+      $cluster_engine->synchronizeWorkingCopyBeforeRead();
+    } else {
+      $did_write_lock = true;
+      $cluster_engine->synchronizeWorkingCopyBeforeWrite();
+    }
+
+    $caught = null;
+    try {
+      list($err, $stdout, $stderr) = id(new ExecFuture('%C', $command))
+        ->setEnv($env, true)
+        ->write($input)
+        ->resolve();
+    } catch (Exception $ex) {
+      $caught = $ex;
+    }
+
+    if ($did_write_lock) {
+      $cluster_engine->synchronizeWorkingCopyAfterWrite();
+    }
+
+    unset($unguarded);
+
+    if ($caught) {
+      throw $caught;
+    }
 
     if ($err) {
       if ($this->isValidGitShallowCloneResponse($stdout, $stderr)) {
@@ -991,11 +1038,12 @@ final class DiffusionServeController extends DiffusionController {
           // <https://github.com/github/git-lfs/issues/1088>
           $no_authorization = 'Basic '.base64_encode('none');
 
-          $get_uri = $file->getCDNURIWithToken();
+          $get_uri = $file->getCDNURI();
           $actions['download'] = array(
             'href' => $get_uri,
             'header' => array(
               'Authorization' => $no_authorization,
+              'X-Phabricator-Request-Type' => 'git-lfs',
             ),
           );
         } else {

@@ -21,6 +21,7 @@ final class DiffusionSubversionServeSSHWorkflow
   private $externalBaseURI;
   private $peekBuffer;
   private $command;
+  private $isProxying;
 
   private function getCommand() {
     return $this->command;
@@ -146,14 +147,25 @@ final class DiffusionSubversionServeSSHWorkflow
 
     if ($this->shouldProxy()) {
       $command = $this->getProxyCommand();
+      $this->isProxying = true;
+      $cwd = null;
     } else {
       $command = csprintf(
         'svnserve -t --tunnel-user=%s',
         $this->getUser()->getUsername());
+      $cwd = PhabricatorEnv::getEmptyCWD();
     }
 
     $command = PhabricatorDaemon::sudoCommandAsDaemonUser($command);
     $future = new ExecFuture('%C', $command);
+
+    // If we're receiving a commit, svnserve will fail to execute the commit
+    // hook with an unhelpful error if the CWD isn't readable by the user we
+    // are sudoing to. Switch to a readable, empty CWD before running
+    // svnserve. See T10941.
+    if ($cwd !== null) {
+      $future->setCWD($cwd);
+    }
 
     $this->inProtocol = new DiffusionSubversionWireProtocol();
     $this->outProtocol = new DiffusionSubversionWireProtocol();
@@ -372,6 +384,10 @@ final class DiffusionSubversionServeSSHWorkflow
   }
 
   private function makeInternalURI($uri_string) {
+    if ($this->isProxying) {
+      return $uri_string;
+    }
+
     $uri = new PhutilURI($uri_string);
 
     $repository = $this->getRepository();
@@ -409,6 +425,10 @@ final class DiffusionSubversionServeSSHWorkflow
   }
 
   private function makeExternalURI($uri) {
+    if ($this->isProxying) {
+      return $uri;
+    }
+
     $internal = $this->internalBaseURI;
     $external = $this->externalBaseURI;
 

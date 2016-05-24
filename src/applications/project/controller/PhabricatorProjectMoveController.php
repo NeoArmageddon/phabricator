@@ -68,26 +68,22 @@ final class PhabricatorProjectMoveController
 
     $xactions = array();
 
+    $order_params = array();
     if ($order == PhabricatorProjectColumn::ORDER_NATURAL) {
-      $order_params = array(
-        'afterPHID' => $after_phid,
-        'beforePHID' => $before_phid,
-      );
-    } else {
-      $order_params = array();
+      if ($after_phid) {
+        $order_params['afterPHID'] = $after_phid;
+      } else if ($before_phid) {
+        $order_params['beforePHID'] = $before_phid;
+      }
     }
 
     $xactions[] = id(new ManiphestTransaction())
-      ->setTransactionType(ManiphestTransaction::TYPE_PROJECT_COLUMN)
+      ->setTransactionType(PhabricatorTransactions::TYPE_COLUMNS)
       ->setNewValue(
         array(
-          'columnPHIDs' => array($column->getPHID()),
-          'projectPHID' => $column->getProjectPHID(),
-        ) + $order_params)
-      ->setOldValue(
-        array(
-          'columnPHIDs' => $old_column_phids,
-          'projectPHID' => $column->getProjectPHID(),
+          array(
+            'columnPHID' => $column->getPHID(),
+          ) + $order_params,
         ));
 
     if ($order == PhabricatorProjectColumn::ORDER_PRIORITY) {
@@ -98,32 +94,6 @@ final class PhabricatorProjectMoveController
       foreach ($priority_xactions as $xaction) {
         $xactions[] = $xaction;
       }
-    }
-
-    $proxy = $column->getProxy();
-    if ($proxy) {
-      // We're moving the task into a subproject or milestone column, so add
-      // the subproject or milestone.
-      $add_projects = array($proxy->getPHID());
-    } else if ($project->getHasSubprojects() || $project->getHasMilestones()) {
-      // We're moving the task into the "Backlog" column on the parent project,
-      // so add the parent explicitly. This gets rid of any subproject or
-      // milestone tags.
-      $add_projects = array($project->getPHID());
-    } else {
-      $add_projects = array();
-    }
-
-    if ($add_projects) {
-      $project_type = PhabricatorProjectObjectHasProjectEdgeType::EDGECONST;
-
-      $xactions[] = id(new ManiphestTransaction())
-        ->setTransactionType(PhabricatorTransactions::TYPE_EDGE)
-        ->setMetadataValue('edge:type', $project_type)
-        ->setNewValue(
-          array(
-            '+' => array_fuse($add_projects),
-          ));
     }
 
     $editor = id(new ManiphestTransactionEditor())

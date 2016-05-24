@@ -678,6 +678,10 @@ abstract class PhabricatorApplicationTransactionEditor
 
         $editor->save();
         break;
+      case PhabricatorTransactions::TYPE_VIEW_POLICY:
+      case PhabricatorTransactions::TYPE_SPACE:
+        $this->scrambleFileSecrets($object);
+        break;
     }
   }
 
@@ -699,7 +703,13 @@ abstract class PhabricatorApplicationTransactionEditor
       $xaction->setEditPolicy($this->getActingAsPHID());
     }
 
-    $xaction->setAuthorPHID($this->getActingAsPHID());
+    // If the transaction already has an explicit author PHID, allow it to
+    // stand. This is used by applications like Owners that hook into the
+    // post-apply change pipeline.
+    if (!$xaction->getAuthorPHID()) {
+      $xaction->setAuthorPHID($this->getActingAsPHID());
+    }
+
     $xaction->setContentSource($this->getContentSource());
     $xaction->attachViewer($actor);
     $xaction->attachObject($object);
@@ -914,7 +924,6 @@ abstract class PhabricatorApplicationTransactionEditor
       }
 
       $xactions = $this->applyFinalEffects($object, $xactions);
-
       if ($read_locking) {
         $object->endReadLocking();
         $read_locking = false;
@@ -954,6 +963,12 @@ abstract class PhabricatorApplicationTransactionEditor
       if ($herald_xactions) {
         $xscript_id = $this->getHeraldTranscript()->getID();
         foreach ($herald_xactions as $herald_xaction) {
+          // Don't set a transcript ID if this is a transaction from another
+          // application or source, like Owners.
+          if ($herald_xaction->getAuthorPHID()) {
+            continue;
+          }
+
           $herald_xaction->setMetadataValue('herald:transcriptID', $xscript_id);
         }
 
@@ -1214,6 +1229,7 @@ abstract class PhabricatorApplicationTransactionEditor
           $xaction,
           pht('You can not apply transactions which already have IDs/PHIDs!'));
       }
+
       if ($xaction->getObjectPHID()) {
         throw new PhabricatorApplicationTransactionStructureException(
           $xaction,
@@ -1221,13 +1237,7 @@ abstract class PhabricatorApplicationTransactionEditor
             'You can not apply transactions which already have %s!',
             'objectPHIDs'));
       }
-      if ($xaction->getAuthorPHID()) {
-        throw new PhabricatorApplicationTransactionStructureException(
-          $xaction,
-          pht(
-            'You can not apply transactions which already have %s!',
-            'authorPHIDs'));
-      }
+
       if ($xaction->getCommentPHID()) {
         throw new PhabricatorApplicationTransactionStructureException(
           $xaction,
@@ -1235,6 +1245,7 @@ abstract class PhabricatorApplicationTransactionEditor
             'You can not apply transactions which already have %s!',
             'commentPHIDs'));
       }
+
       if ($xaction->getCommentVersion() !== 0) {
         throw new PhabricatorApplicationTransactionStructureException(
           $xaction,
@@ -1566,6 +1577,14 @@ abstract class PhabricatorApplicationTransactionEditor
       $type = $xaction->getTransactionType();
       if (isset($types[$type])) {
         foreach ($types[$type] as $other_key) {
+          $other_xaction = $result[$other_key];
+
+          // Don't merge transactions with different authors. For example,
+          // don't merge Herald transactions and owners transactions.
+          if ($other_xaction->getAuthorPHID() != $xaction->getAuthorPHID()) {
+            continue;
+          }
+
           $merged = $this->mergeTransactions($result[$other_key], $xaction);
           if ($merged) {
             $result[$other_key] = $merged;
@@ -2678,7 +2697,9 @@ abstract class PhabricatorApplicationTransactionEditor
    */
   protected function addHeadersAndCommentsToMailBody(
     PhabricatorMetaMTAMailBody $body,
-    array $xactions) {
+    array $xactions,
+    $object_label = null,
+    $object_href = null) {
 
     $headers = array();
     $comments = array();
@@ -2698,7 +2719,58 @@ abstract class PhabricatorApplicationTransactionEditor
         $comments[] = $comment;
       }
     }
-    $body->addRawSection(implode("\n", $headers));
+
+    $headers_text = implode("\n", $headers);
+    $body->addRawPlaintextSection($headers_text);
+
+    $headers_html = phutil_implode_html(phutil_tag('br'), $headers);
+
+    $header_button = null;
+    if ($object_label !== null) {
+      $button_style = array(
+        'text-decoration: none;',
+        'padding: 4px 8px;',
+        'margin: 0 8px 8px;',
+        'float: right;',
+        'color: #464C5C;',
+        'font-weight: bold;',
+        'border-radius: 3px;',
+        'background-color: #F7F7F9;',
+        'background-image: linear-gradient(to bottom,#fff,#f1f0f1);',
+        'display: inline-block;',
+        'border: 1px solid rgba(71,87,120,.2);',
+      );
+
+      $header_button = phutil_tag(
+        'a',
+        array(
+          'style' => implode(' ', $button_style),
+          'href' => $object_href,
+        ),
+        $object_label);
+    }
+
+    $xactions_style = array(
+    );
+
+    $header_action = phutil_tag(
+      'td',
+      array(),
+      $header_button);
+
+    $header_action = phutil_tag(
+      'td',
+      array(
+        'style' => implode(' ', $xactions_style),
+      ),
+      $headers_html);
+
+    $headers_html = phutil_tag(
+      'table',
+      array(),
+      phutil_tag('tr', array(), array($header_action, $header_button)));
+
+    $body->addRawHTMLSection($headers_html);
 
     foreach ($comments as $comment) {
       $body->addRemarkupSection(null, $comment);
@@ -3469,6 +3541,66 @@ abstract class PhabricatorApplicationTransactionEditor
     }
 
     return $phids;
+  }
+
+  /**
+   * When the view policy for an object is changed, scramble the secret keys
+   * for attached files to invalidate existing URIs.
+   */
+  private function scrambleFileSecrets($object) {
+    // If this is a newly created object, we don't need to scramble anything
+    // since it couldn't have been previously published.
+    if ($this->getIsNewObject()) {
+      return;
+    }
+
+    // If the object is a file itself, scramble it.
+    if ($object instanceof PhabricatorFile) {
+      if ($this->shouldScramblePolicy($object->getViewPolicy())) {
+        $object->scrambleSecret();
+        $object->save();
+      }
+    }
+
+    $phid = $object->getPHID();
+
+    $attached_phids = PhabricatorEdgeQuery::loadDestinationPHIDs(
+      $phid,
+      PhabricatorObjectHasFileEdgeType::EDGECONST);
+    if (!$attached_phids) {
+      return;
+    }
+
+    $omnipotent_viewer = PhabricatorUser::getOmnipotentUser();
+
+    $files = id(new PhabricatorFileQuery())
+      ->setViewer($omnipotent_viewer)
+      ->withPHIDs($attached_phids)
+      ->execute();
+    foreach ($files as $file) {
+      $view_policy = $file->getViewPolicy();
+      if ($this->shouldScramblePolicy($view_policy)) {
+        $file->scrambleSecret();
+        $file->save();
+      }
+    }
+  }
+
+
+  /**
+   * Check if a policy is strong enough to justify scrambling. Objects which
+   * are set to very open policies don't need to scramble their files, and
+   * files with very open policies don't need to be scrambled when associated
+   * objects change.
+   */
+  private function shouldScramblePolicy($policy) {
+    switch ($policy) {
+      case PhabricatorPolicies::POLICY_PUBLIC:
+      case PhabricatorPolicies::POLICY_USER:
+        return false;
+    }
+
+    return true;
   }
 
 }

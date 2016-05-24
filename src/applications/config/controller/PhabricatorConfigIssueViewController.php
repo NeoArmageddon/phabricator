@@ -9,7 +9,8 @@ final class PhabricatorConfigIssueViewController
 
     $issues = PhabricatorSetupCheck::runAllChecks();
     PhabricatorSetupCheck::setOpenSetupIssueKeys(
-      PhabricatorSetupCheck::getUnignoredIssueKeys($issues));
+      PhabricatorSetupCheck::getUnignoredIssueKeys($issues),
+      $update_database = true);
 
     if (empty($issues[$issue_key])) {
       $content = id(new PHUIInfoView())
@@ -36,14 +37,10 @@ final class PhabricatorConfigIssueViewController
       ->addTextCrumb(pht('Setup Issues'), $this->getApplicationURI('issue/'))
       ->addTextCrumb($title, $request->getRequestURI());
 
-    return $this->buildApplicationPage(
-      array(
-        $crumbs,
-        $content,
-      ),
-      array(
-        'title' => $title,
-      ));
+    return $this->newPage()
+      ->setTitle($title)
+      ->setCrumbs($crumbs)
+      ->appendChild($content);
   }
 
   private function renderIssue(PhabricatorSetupIssue $issue) {

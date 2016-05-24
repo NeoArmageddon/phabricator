@@ -57,14 +57,13 @@ final class DiffusionCommitController extends DiffusionController {
             'Failed to load the commit because the commit has not been '.
             'parsed yet.'));
 
-      return $this->buildApplicationPage(
-        array(
-          $crumbs,
-          $error,
-        ),
-        array(
-          'title' => pht('Commit Still Parsing'),
-        ));
+      $title = pht('Commit Still Parsing');
+
+      return $this->newPage()
+        ->setTitle($title)
+        ->setCrumbs($crumbs)
+        ->appendChild($error);
+
     }
 
     $audit_requests = $commit->getAudits();
@@ -356,8 +355,8 @@ final class DiffusionCommitController extends DiffusionController {
         $change_list,
         $add_comment,
       ))
-      ->addPropertySection(pht('DESCRIPTION'), $detail_list)
-      ->addPropertySection(pht('DETAILS'), $details)
+      ->addPropertySection(pht('Description'), $detail_list)
+      ->addPropertySection(pht('Details'), $details)
       ->setCurtain($curtain);
 
     $page = $this->newPage()
@@ -456,7 +455,12 @@ final class DiffusionCommitController extends DiffusionController {
     if ($audit_requests) {
       $user_requests = array();
       $other_requests = array();
+
       foreach ($audit_requests as $audit_request) {
+        if (!$audit_request->isInteresting()) {
+          continue;
+        }
+
         if ($audit_request->isUser()) {
           $user_requests[] = $audit_request;
         } else {
@@ -472,7 +476,7 @@ final class DiffusionCommitController extends DiffusionController {
 
       if ($other_requests) {
         $view->addProperty(
-          pht('Project/Package Auditors'),
+          pht('Group Auditors'),
           $this->renderAuditStatusView($other_requests));
       }
     }
