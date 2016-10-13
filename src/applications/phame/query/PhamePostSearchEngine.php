@@ -18,24 +18,36 @@ final class PhamePostSearchEngine
   protected function buildQueryFromParameters(array $map) {
     $query = $this->newQuery();
 
-    if (strlen($map['visibility'])) {
+    if ($map['visibility']) {
       $query->withVisibility($map['visibility']);
     }
+    if ($map['blogPHIDs']) {
+      $query->withBlogPHIDs($map['blogPHIDs']);
+    }
+
 
     return $query;
   }
 
   protected function buildCustomSearchFields() {
     return array(
-      id(new PhabricatorSearchSelectField())
+      id(new PhabricatorSearchCheckboxesField())
         ->setKey('visibility')
         ->setLabel(pht('Visibility'))
         ->setOptions(
           array(
-            '' => pht('All'),
             PhameConstants::VISIBILITY_PUBLISHED => pht('Published'),
             PhameConstants::VISIBILITY_DRAFT => pht('Draft'),
+            PhameConstants::VISIBILITY_ARCHIVED => pht('Archived'),
           )),
+      id(new PhabricatorSearchDatasourceField())
+        ->setLabel(pht('Blogs'))
+        ->setKey('blogPHIDs')
+        ->setAliases(array('blog', 'blogs', 'blogPHIDs'))
+        ->setDescription(
+          pht('Search for posts within certain blogs.'))
+        ->setDatasource(new PhameBlogDatasource()),
+
     );
   }
 
@@ -48,6 +60,7 @@ final class PhamePostSearchEngine
       'all' => pht('All Posts'),
       'live' => pht('Published Posts'),
       'draft' => pht('Draft Posts'),
+      'archived' => pht('Archived Posts'),
     );
     return $names;
   }
@@ -61,10 +74,13 @@ final class PhamePostSearchEngine
         return $query;
       case 'live':
         return $query->setParameter(
-          'visibility', PhameConstants::VISIBILITY_PUBLISHED);
+          'visibility', array(PhameConstants::VISIBILITY_PUBLISHED));
       case 'draft':
         return $query->setParameter(
-          'visibility', PhameConstants::VISIBILITY_DRAFT);
+          'visibility', array(PhameConstants::VISIBILITY_DRAFT));
+      case 'archived':
+        return $query->setParameter(
+          'visibility', array(PhameConstants::VISIBILITY_ARCHIVED));
     }
 
     return parent::buildSavedQueryFromBuiltin($query_key);
@@ -92,6 +108,7 @@ final class PhamePostSearchEngine
       $item = id(new PHUIObjectItemView())
         ->setUser($viewer)
         ->setObject($post)
+        ->setObjectName($post->getMonogram())
         ->setHeader($post->getTitle())
         ->setStatusIcon('fa-star')
         ->setHref($post->getViewURI())
@@ -99,11 +116,19 @@ final class PhamePostSearchEngine
       if ($post->isDraft()) {
         $item->setStatusIcon('fa-star-o grey');
         $item->setDisabled(true);
-        $item->addIcon('none', pht('Draft Post'));
+        $item->addIcon('fa-star-o', pht('Draft Post'));
+      } else if ($post->isArchived()) {
+        $item->setStatusIcon('fa-ban grey');
+        $item->setDisabled(true);
+        $item->addIcon('fa-ban', pht('Archived Post'));
       } else {
         $date = $post->getDatePublished();
         $item->setEpoch($date);
       }
+      $item->addAction(
+          id(new PHUIListItemView())
+            ->setIcon('fa-pencil')
+            ->setHref($post->getEditURI()));
       $list->addItem($item);
     }
 

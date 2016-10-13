@@ -77,6 +77,13 @@ final class DiffusionURIEditor
           $old_uri = $object->getEffectiveURI();
         } else {
           $old_uri = null;
+
+          // When creating a URI via the API, we may not have processed the
+          // repository transaction yet. Attach the repository here to make
+          // sure we have it for the calls below.
+          if ($this->repository) {
+            $object->attachRepository($this->repository);
+          }
         }
 
         $object->setURI($xaction->getNewValue());
@@ -463,6 +470,8 @@ final class DiffusionURIEditor
       break;
     }
 
+    $was_hosted = $repository->isHosted();
+
     if ($observe_uri) {
       $repository
         ->setHosted(false)
@@ -476,6 +485,17 @@ final class DiffusionURIEditor
     }
 
     $repository->save();
+
+    $is_hosted = $repository->isHosted();
+
+    // If we've swapped the repository from hosted to observed or vice versa,
+    // reset all the cluster version clocks.
+    if ($was_hosted != $is_hosted) {
+      $cluster_engine = id(new DiffusionRepositoryClusterEngine())
+        ->setViewer($this->getActor())
+        ->setRepository($repository)
+        ->synchronizeWorkingCopyAfterHostingChange();
+    }
 
     return $xactions;
   }

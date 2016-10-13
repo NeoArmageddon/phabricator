@@ -190,6 +190,14 @@ final class PhabricatorExtraConfigSetupCheck extends PhabricatorSetupCheck {
       'The Differential revision list view age UI elements have been removed '.
       'to simplify the interface.');
 
+    $global_settings_reason = pht(
+      'The "Re: Prefix" and "Vary Subjects" settings are now configured '.
+      'in global settings.');
+
+    $dashboard_reason = pht(
+        'This option has been removed, you can use Dashboards to provide '.
+        'homepage customization. See T11533 for more details.');
+
     $ancient_config += array(
       'phid.external-loaders' =>
         pht(
@@ -321,6 +329,18 @@ final class PhabricatorExtraConfigSetupCheck extends PhabricatorSetupCheck {
 
       'differential.days-fresh' => $stale_reason,
       'differential.days-stale' => $stale_reason,
+
+      'metamta.re-prefix' => $global_settings_reason,
+      'metamta.vary-subjects' => $global_settings_reason,
+
+      'ui.custom-header' => pht(
+        'This option has been replaced with `ui.logo`, which provides more '.
+        'flexible configuration options.'),
+
+      'welcome.html' => $dashboard_reason,
+      'maniphest.priorities.unbreak-now' => $dashboard_reason,
+      'maniphest.priorities.needs-triage' => $dashboard_reason,
+
     );
 
     return $ancient_config;

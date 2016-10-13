@@ -38,7 +38,6 @@ final class PhabricatorPasteApplication extends PhabricatorApplication {
         => 'PhabricatorPasteViewController',
       '/paste/' => array(
         '(query/(?P<queryKey>[^/]+)/)?' => 'PhabricatorPasteListController',
-        'create/' => 'PhabricatorPasteEditController',
         $this->getEditRoutePattern('edit/') => 'PhabricatorPasteEditController',
         'raw/(?P<id>[1-9]\d*)/' => 'PhabricatorPasteRawController',
         'archive/(?P<id>[1-9]\d*)/' => 'PhabricatorPasteArchiveController',
@@ -74,12 +73,6 @@ final class PhabricatorPasteApplication extends PhabricatorApplication {
         'capability' => PhabricatorPolicyCapability::CAN_EDIT,
       ),
     );
-  }
-
-  public function getQuickCreateItems(PhabricatorUser $viewer) {
-    return id(new PhabricatorPasteEditEngine())
-      ->setViewer($viewer)
-      ->loadQuickCreateItems();
   }
 
   public function getMailCommandObjects() {

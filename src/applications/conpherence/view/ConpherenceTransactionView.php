@@ -133,16 +133,6 @@ final class ConpherenceTransactionView extends AphrontView {
     $transaction = $this->getConpherenceTransaction();
     $info = array();
 
-    if ($this->getFullDisplay() && $transaction->getContentSource()) {
-      $content_source = id(new PhabricatorContentSourceView())
-        ->setContentSource($transaction->getContentSource())
-        ->setUser($viewer)
-        ->render();
-      if ($content_source) {
-        $info[] = $content_source;
-      }
-    }
-
     Javelin::initBehavior('phabricator-tooltips');
     $tip = phabricator_datetime($transaction->getDateCreated(), $viewer);
     $label = phabricator_time($transaction->getDateCreated(), $viewer);
@@ -184,8 +174,6 @@ final class ConpherenceTransactionView extends AphrontView {
         $label);
     }
 
-    $info = phutil_implode_html(" \xC2\xB7 ", $info);
-
     return phutil_tag(
       'span',
       array(
@@ -213,21 +201,19 @@ final class ConpherenceTransactionView extends AphrontView {
 
   private function renderTransactionImage() {
     $image = null;
-    if ($this->getFullDisplay()) {
-      $transaction = $this->getConpherenceTransaction();
-      switch ($transaction->getTransactionType()) {
-        case PhabricatorTransactions::TYPE_COMMENT:
-          $handles = $this->getHandles();
-          $author = $handles[$transaction->getAuthorPHID()];
-          $image_uri = $author->getImageURI();
-          $image = phutil_tag(
-            'span',
-            array(
-              'class' => 'conpherence-transaction-image',
-              'style' => 'background-image: url('.$image_uri.');',
-            ));
-          break;
-      }
+    $transaction = $this->getConpherenceTransaction();
+    switch ($transaction->getTransactionType()) {
+      case PhabricatorTransactions::TYPE_COMMENT:
+        $handles = $this->getHandles();
+        $author = $handles[$transaction->getAuthorPHID()];
+        $image_uri = $author->getImageURI();
+        $image = phutil_tag(
+          'span',
+          array(
+            'class' => 'conpherence-transaction-image',
+            'style' => 'background-image: url('.$image_uri.');',
+          ));
+        break;
     }
     return $image;
   }
@@ -239,12 +225,9 @@ final class ConpherenceTransactionView extends AphrontView {
     $content = null;
     $handles = $this->getHandles();
     switch ($transaction->getTransactionType()) {
-      case ConpherenceTransaction::TYPE_FILES:
-        $content = $transaction->getTitle();
-        break;
       case ConpherenceTransaction::TYPE_TITLE:
+      case ConpherenceTransaction::TYPE_TOPIC:
       case ConpherenceTransaction::TYPE_PICTURE:
-      case ConpherenceTransaction::TYPE_PICTURE_CROP:
       case ConpherenceTransaction::TYPE_PARTICIPANTS:
       case PhabricatorTransactions::TYPE_VIEW_POLICY:
       case PhabricatorTransactions::TYPE_EDIT_POLICY:

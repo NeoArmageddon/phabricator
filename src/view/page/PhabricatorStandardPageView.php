@@ -132,8 +132,13 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
   }
 
   public function getDurableColumnVisible() {
-    $column_key = PhabricatorUserPreferences::PREFERENCE_CONPHERENCE_COLUMN;
-    return (bool)$this->getUserPreference($column_key, 0);
+    $column_key = PhabricatorConpherenceColumnVisibleSetting::SETTINGKEY;
+    return (bool)$this->getUserPreference($column_key, false);
+  }
+
+  public function getDurableColumnMinimize() {
+    $column_key = PhabricatorConpherenceColumnMinimizeSetting::SETTINGKEY;
+    return (bool)$this->getUserPreference($column_key, false);
   }
 
   public function addQuicksandConfig(array $config) {
@@ -164,12 +169,11 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
   }
 
   public function getTitle() {
-    $glyph_key = PhabricatorUserPreferences::PREFERENCE_TITLES;
-    if ($this->getUserPreference($glyph_key) == 'text') {
-      $use_glyph = false;
-    } else {
-      $use_glyph = true;
-    }
+    $glyph_key = PhabricatorTitleGlyphsSetting::SETTINGKEY;
+    $glyph_on = PhabricatorTitleGlyphsSetting::VALUE_TITLE_GLYPHS;
+    $glyph_setting = $this->getUserPreference($glyph_key, $glyph_on);
+
+    $use_glyph = ($glyph_setting == $glyph_on);
 
     $title = parent::getTitle();
 
@@ -223,16 +227,11 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
     }
 
     if ($user) {
-      if ($user->isLoggedIn()) {
+      if ($user->isUserActivated()) {
         $offset = $user->getTimeZoneOffset();
 
-        $preferences = $user->loadPreferences();
-        $ignore_key = PhabricatorUserPreferences::PREFERENCE_IGNORE_OFFSET;
-
-        $ignore = $preferences->getPreference($ignore_key);
-        if (!strlen($ignore)) {
-          $ignore = null;
-        }
+        $ignore_key = PhabricatorTimezoneIgnoreOffsetSetting::SETTINGKEY;
+        $ignore = $user->getUserSetting($ignore_key);
 
         Javelin::initBehavior(
           'detect-timezone',
@@ -245,6 +244,28 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
             'ignoreKey' => $ignore_key,
             'ignore' => $ignore,
           ));
+
+        if ($user->getIsAdmin()) {
+          $server_https = $request->isHTTPS();
+          $server_protocol = $server_https ? 'HTTPS' : 'HTTP';
+          $client_protocol = $server_https ? 'HTTP' : 'HTTPS';
+
+          $doc_name = 'Configuring a Preamble Script';
+          $doc_href = PhabricatorEnv::getDoclink($doc_name);
+
+          Javelin::initBehavior(
+            'setup-check-https',
+            array(
+              'server_https' => $server_https,
+              'doc_name' => pht('See Documentation'),
+              'doc_href' => $doc_href,
+              'message' => pht(
+                'Phabricator thinks you are using %s, but your '.
+                'client is conviced that it is using %s. This is a serious '.
+                'misconfiguration with subtle, but significant, consequences.',
+                $server_protocol, $client_protocol),
+            ));
+        }
       }
 
       $default_img_uri =
@@ -362,8 +383,8 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
     if ($request) {
       $user = $request->getUser();
       if ($user) {
-        $monospaced = $user->loadPreferences()->getPreference(
-          PhabricatorUserPreferences::PREFERENCE_MONOSPACED);
+        $monospaced = $user->getUserSetting(
+          PhabricatorMonospacedFontSetting::SETTINGKEY);
       }
     }
 
@@ -374,7 +395,7 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
       // We can't print this normally because escaping quotation marks will
       // break the CSS. Instead, filter it strictly and then mark it as safe.
       $monospaced = new PhutilSafeHTML(
-        PhabricatorUserPreferences::filterMonospacedCSSRule(
+        PhabricatorMonospacedFontSetting::filterMonospacedCSSRule(
           $monospaced));
 
       $font_css = hsprintf(
@@ -443,24 +464,6 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
           'or the error log.'));
     }
 
-    // Render the "you have unresolved setup issues..." warning.
-    $setup_warning = null;
-    if ($user && $user->getIsAdmin()) {
-      $open = PhabricatorSetupCheck::getOpenSetupIssueKeys();
-      if ($open) {
-        $classes[] = 'page-has-warning';
-        $setup_warning = phutil_tag_div(
-          'setup-warning-callout',
-          phutil_tag(
-            'a',
-            array(
-              'href' => '/config/issue/',
-              'title' => implode(', ', $open),
-            ),
-            pht('You have %d unresolved setup issue(s)...', count($open))));
-      }
-    }
-
     $main_page = phutil_tag(
       'div',
       array(
@@ -470,7 +473,6 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
       array(
         $developer_warning,
         $header_chrome,
-        $setup_warning,
         phutil_tag(
           'div',
           array(
@@ -483,12 +485,17 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
     $durable_column = null;
     if ($this->getShowDurableColumn()) {
       $is_visible = $this->getDurableColumnVisible();
+      $is_minimize = $this->getDurableColumnMinimize();
       $durable_column = id(new ConpherenceDurableColumnView())
         ->setSelectedConpherence(null)
         ->setUser($user)
         ->setQuicksandConfig($this->buildQuicksandConfig())
         ->setVisible($is_visible)
+        ->setMinimize($is_minimize)
         ->setInitialLoad(true);
+      if ($is_minimize) {
+        $this->classes[] = 'minimize-column';
+      }
     }
 
     Javelin::initBehavior('quicksand-blacklist', array(
@@ -645,13 +652,23 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
       $headers[DarkConsoleServicesPlugin::getQueryAnalyzerHeader()] = true;
     }
 
+    if ($user) {
+      $setting_tab = PhabricatorDarkConsoleTabSetting::SETTINGKEY;
+      $setting_visible = PhabricatorDarkConsoleVisibleSetting::SETTINGKEY;
+      $tab = $user->getUserSetting($setting_tab);
+      $visible = $user->getUserSetting($setting_visible);
+    } else {
+      $tab = null;
+      $visible = true;
+    }
+
     return array(
       // NOTE: We use a generic label here to prevent input reflection
       // and mitigate compression attacks like BREACH. See discussion in
       // T3684.
       'uri' => pht('Main Request'),
-      'selected' => $user ? $user->getConsoleTab() : null,
-      'visible'  => $user ? (int)$user->getConsoleVisible() : true,
+      'selected' => $tab,
+      'visible'  => $visible,
       'headers' => $headers,
     );
   }
@@ -788,6 +805,7 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
 
     return array(
       'title' => $this->getTitle(),
+      'bodyClasses' => $this->getBodyClasses(),
       'aphlictDropdownData' => array(
         $dropdown_query->getNotificationData(),
         $dropdown_query->getConpherenceData(),
@@ -834,7 +852,7 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
       return $default;
     }
 
-    return $user->loadPreferences()->getPreference($key, $default);
+    return $user->getUserSetting($key);
   }
 
   public function produceAphrontResponse() {
@@ -864,7 +882,8 @@ final class PhabricatorStandardPageView extends PhabricatorBarePageView
     } else {
       $content = $this->render();
       $response = id(new AphrontWebpageResponse())
-        ->setContent($content);
+        ->setContent($content)
+        ->setFrameable($this->getFrameable());
     }
 
     return $response;

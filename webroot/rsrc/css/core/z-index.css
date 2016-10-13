@@ -68,10 +68,6 @@ div.phui-calendar-day-event {
   z-index: 4;
 }
 
-.setup-warning-callout {
-  z-index: 5;
-}
-
 .loading .messages-loading-mask,
 .loading .widgets-loading-mask {
   z-index: 5;
@@ -152,6 +148,10 @@ div.jx-typeahead-results {
 
 .phuix-autocomplete {
   z-index: 21;
+}
+
+.conpherence-participant-pane {
+  z-index: 25;
 }
 
 .phuix-dropdown-menu {

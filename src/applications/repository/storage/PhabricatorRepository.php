@@ -35,7 +35,6 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
   const TABLE_PATHCHANGE = 'repository_pathchange';
   const TABLE_FILESYSTEM = 'repository_filesystem';
   const TABLE_SUMMARY = 'repository_summary';
-  const TABLE_BADCOMMIT = 'repository_badcommit';
   const TABLE_LINTMESSAGE = 'repository_lintmessage';
   const TABLE_PARENTS = 'repository_parents';
   const TABLE_COVERAGE = 'repository_coverage';
@@ -508,7 +507,7 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     return DiffusionCommandEngine::newCommandEngine($this)
       ->setArgv($argv)
       ->setCredentialPHID($this->getCredentialPHID())
-      ->setProtocol($this->getRemoteProtocol());
+      ->setURI($this->getRemoteURIObject());
   }
 
 /* -(  Local Command Execution  )-------------------------------------------- */
@@ -910,6 +909,21 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     return null;
   }
 
+  public function shouldTrackRef(DiffusionRepositoryRef $ref) {
+    // At least for now, don't track the staging area tags.
+    if ($ref->isTag()) {
+      if (preg_match('(^phabricator/)', $ref->getShortName())) {
+        return false;
+      }
+    }
+
+    if (!$ref->isBranch()) {
+      return true;
+    }
+
+    return $this->shouldTrackBranch($ref->getShortName());
+  }
+
   public function shouldTrackBranch($branch) {
     return $this->isBranchInFilter($branch, 'branch-filter');
   }
@@ -1019,6 +1033,14 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
 
 /* -(  Autoclose  )---------------------------------------------------------- */
 
+
+  public function shouldAutocloseRef(DiffusionRepositoryRef $ref) {
+    if (!$ref->isBranch()) {
+      return false;
+    }
+
+    return $this->shouldAutocloseBranch($ref->getShortName());
+  }
 
   /**
    * Determine if autoclose is active for a branch.
@@ -1201,27 +1223,19 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
    */
   public function getRemoteProtocol() {
     $uri = $this->getRemoteURIObject();
-
-    if ($uri instanceof PhutilGitURI) {
-      return 'ssh';
-    } else {
-      return $uri->getProtocol();
-    }
+    return $uri->getProtocol();
   }
 
 
   /**
-   * Get a parsed object representation of the repository's remote URI. This
-   * may be a normal URI (returned as a @{class@libphutil:PhutilURI}) or a git
-   * URI (returned as a @{class@libphutil:PhutilGitURI}).
+   * Get a parsed object representation of the repository's remote URI..
    *
-   * @return wild A @{class@libphutil:PhutilURI} or
-   *              @{class@libphutil:PhutilGitURI}.
+   * @return wild A @{class@libphutil:PhutilURI}.
    * @task uri
    */
   public function getRemoteURIObject() {
     $raw_uri = $this->getDetail('remote-uri');
-    if (!$raw_uri) {
+    if (!strlen($raw_uri)) {
       return new PhutilURI('');
     }
 
@@ -1229,17 +1243,7 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
       return new PhutilURI('file://'.$raw_uri);
     }
 
-    $uri = new PhutilURI($raw_uri);
-    if ($uri->getProtocol()) {
-      return $uri;
-    }
-
-    $uri = new PhutilGitURI($raw_uri);
-    if ($uri->getDomain()) {
-      return $uri;
-    }
-
-    throw new Exception(pht("Remote URI '%s' could not be parsed!", $raw_uri));
+    return new PhutilURI($raw_uri);
   }
 
 
@@ -1618,11 +1622,10 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
       return false;
     }
 
-    if ($this->isGit() || $this->isHg()) {
-      return true;
-    }
+    // In Git and Mercurial, ref deletions and rewrites are dangerous.
+    // In Subversion, editing revprops is dangerous.
 
-    return false;
+    return true;
   }
 
   public function shouldAllowDangerousChanges() {
@@ -1646,12 +1649,27 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
         $this->getID(),
         $status_type);
     } else {
+      // If the existing message has the same code (e.g., we just hit an
+      // error and also previously hit an error) we increment the message
+      // count. This allows us to determine how many times in a row we've
+      // run into an error.
+
+      // NOTE: The assignments in "ON DUPLICATE KEY UPDATE" are evaluated
+      // in order, so the "messageCount" assignment must occur before the
+      // "statusCode" assignment. See T11705.
+
       queryfx(
         $conn_w,
         'INSERT INTO %T
-          (repositoryID, statusType, statusCode, parameters, epoch)
-          VALUES (%d, %s, %s, %s, %d)
+          (repositoryID, statusType, statusCode, parameters, epoch,
+            messageCount)
+          VALUES (%d, %s, %s, %s, %d, %d)
           ON DUPLICATE KEY UPDATE
+            messageCount =
+              IF(
+                statusCode = VALUES(statusCode),
+                messageCount + VALUES(messageCount),
+                VALUES(messageCount)),
             statusCode = VALUES(statusCode),
             parameters = VALUES(parameters),
             epoch = VALUES(epoch)',
@@ -1660,24 +1678,11 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
         $status_type,
         $status_code,
         json_encode($parameters),
-        time());
+        time(),
+        1);
     }
 
     return $this;
-  }
-
-  public static function getRemoteURIProtocol($raw_uri) {
-    $uri = new PhutilURI($raw_uri);
-    if ($uri->getProtocol()) {
-      return strtolower($uri->getProtocol());
-    }
-
-    $git_uri = new PhutilGitURI($raw_uri);
-    if (strlen($git_uri->getDomain()) && strlen($git_uri->getPath())) {
-      return 'ssh';
-    }
-
-    return null;
   }
 
   public static function assertValidRemoteURI($uri) {
@@ -1686,7 +1691,8 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
         pht('The remote URI has leading or trailing whitespace.'));
     }
 
-    $protocol = self::getRemoteURIProtocol($uri);
+    $uri_object = new PhutilURI($uri);
+    $protocol = $uri_object->getProtocol();
 
     // Catch confusion between Git/SCP-style URIs and normal URIs. See T3619
     // for discussion. This is usually a user adding "ssh://" to an implicit
@@ -1748,6 +1754,33 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
    * @return  int   Repository update interval, in seconds.
    */
   public function loadUpdateInterval($minimum = 15) {
+    // First, check if we've hit errors recently. If we have, wait one period
+    // for each consecutive error. Normally, this corresponds to a backoff of
+    // 15s, 30s, 45s, etc.
+
+    $message_table = new PhabricatorRepositoryStatusMessage();
+    $conn = $message_table->establishConnection('r');
+    $error_count = queryfx_one(
+      $conn,
+      'SELECT MAX(messageCount) error_count FROM %T
+        WHERE repositoryID = %d
+        AND statusType IN (%Ls)
+        AND statusCode IN (%Ls)',
+      $message_table->getTableName(),
+      $this->getID(),
+      array(
+        PhabricatorRepositoryStatusMessage::TYPE_INIT,
+        PhabricatorRepositoryStatusMessage::TYPE_FETCH,
+      ),
+      array(
+        PhabricatorRepositoryStatusMessage::CODE_ERROR,
+      ));
+
+    $error_count = (int)$error_count['error_count'];
+    if ($error_count > 0) {
+      return (int)($minimum * $error_count);
+    }
+
     // If a repository is still importing, always pull it as frequently as
     // possible. This prevents us from hanging for a long time at 99.9% when
     // importing an inactive repository.
@@ -1768,32 +1801,35 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
       $window_start);
     if ($last_commit) {
       $time_since_commit = ($window_start - $last_commit['epoch']);
-
-      $last_few_days = phutil_units('3 days in seconds');
-
-      if ($time_since_commit <= $last_few_days) {
-        // For repositories with activity in the recent past, we wait one
-        // extra second for every 10 minutes since the last commit. This
-        // shorter backoff is intended to handle weekends and other short
-        // breaks from development.
-        $smart_wait = ($time_since_commit / 600);
-      } else {
-        // For repositories without recent activity, we wait one extra second
-        // for every 4 minutes since the last commit. This longer backoff
-        // handles rarely used repositories, up to the maximum.
-        $smart_wait = ($time_since_commit / 240);
-      }
-
-      // We'll never wait more than 6 hours to pull a repository.
-      $longest_wait = phutil_units('6 hours in seconds');
-      $smart_wait = min($smart_wait, $longest_wait);
-
-      $smart_wait = max($minimum, $smart_wait);
     } else {
-      $smart_wait = $minimum;
+      // If the repository has no commits, treat the creation date as
+      // though it were the date of the last commit. This makes empty
+      // repositories update quickly at first but slow down over time
+      // if they don't see any activity.
+      $time_since_commit = ($window_start - $this->getDateCreated());
     }
 
-    return $smart_wait;
+    $last_few_days = phutil_units('3 days in seconds');
+
+    if ($time_since_commit <= $last_few_days) {
+      // For repositories with activity in the recent past, we wait one
+      // extra second for every 10 minutes since the last commit. This
+      // shorter backoff is intended to handle weekends and other short
+      // breaks from development.
+      $smart_wait = ($time_since_commit / 600);
+    } else {
+      // For repositories without recent activity, we wait one extra second
+      // for every 4 minutes since the last commit. This longer backoff
+      // handles rarely used repositories, up to the maximum.
+      $smart_wait = ($time_since_commit / 240);
+    }
+
+    // We'll never wait more than 6 hours to pull a repository.
+    $longest_wait = phutil_units('6 hours in seconds');
+    $smart_wait = min($smart_wait, $longest_wait);
+    $smart_wait = max($minimum, $smart_wait);
+
+    return (int)$smart_wait;
   }
 
 
@@ -2061,7 +2097,10 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
       $clone[] = $uri;
     }
 
-    return msort($clone, 'getURIScore');
+    $clone = msort($clone, 'getURIScore');
+    $clone = array_reverse($clone);
+
+    return $clone;
   }
 
 
@@ -2078,7 +2117,13 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
       PhabricatorRepositoryURI::BUILTIN_IDENTIFIER_ID => true,
     );
 
-    $allow_http = PhabricatorEnv::getEnvConfig('diffusion.allow-http-auth');
+    // If the view policy of the repository is public, support anonymous HTTP
+    // even if authenticated HTTP is not supported.
+    if ($this->getViewPolicy() === PhabricatorPolicies::POLICY_PUBLIC) {
+      $allow_http = true;
+    } else {
+      $allow_http = PhabricatorEnv::getEnvConfig('diffusion.allow-http-auth');
+    }
 
     $base_uri = PhabricatorEnv::getURI('/');
     $base_uri = new PhutilURI($base_uri);
@@ -2400,6 +2445,12 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
         ->setKey('status')
         ->setType('string')
         ->setDescription(pht('Active or inactive status.')),
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('isImporting')
+        ->setType('bool')
+        ->setDescription(
+          pht(
+            'True if the repository is importing initial commits.')),
     );
   }
 
@@ -2410,6 +2461,7 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
       'callsign' => $this->getCallsign(),
       'shortName' => $this->getRepositorySlug(),
       'status' => $this->getStatus(),
+      'isImporting' => (bool)$this->isImporting(),
     );
   }
 

@@ -30,6 +30,10 @@ final class PhabricatorPeopleApplication extends PhabricatorApplication {
     return pht('Sort of a social utility.');
   }
 
+  public function getApplicationGroup() {
+    return self::GROUP_UTILITIES;
+  }
+
   public function canUninstall() {
     return false;
   }
@@ -69,7 +73,6 @@ final class PhabricatorPeopleApplication extends PhabricatorApplication {
         '' => 'PhabricatorPeopleProfileViewController',
         'panel/'
           => $this->getPanelRouting('PhabricatorPeopleProfilePanelController'),
-        'calendar/' => 'PhabricatorPeopleCalendarController',
       ),
     );
   }
@@ -125,31 +128,6 @@ final class PhabricatorPeopleApplication extends PhabricatorApplication {
       ->setCount($count);
 
     return $status;
-  }
-
-  public function getQuickCreateItems(PhabricatorUser $viewer) {
-    $items = array();
-
-    $can_create = PhabricatorPolicyFilter::hasCapability(
-      $viewer,
-      $this,
-      PeopleCreateUsersCapability::CAPABILITY);
-
-    if ($can_create) {
-      $item = id(new PHUIListItemView())
-        ->setName(pht('User Account'))
-        ->setIcon('fa-users')
-        ->setHref($this->getBaseURI().'create/');
-      $items[] = $item;
-    } else if ($viewer->getIsAdmin()) {
-      $item = id(new PHUIListItemView())
-        ->setName(pht('Bot Account'))
-        ->setIcon('fa-android')
-        ->setHref($this->getBaseURI().'new/bot/');
-      $items[] = $item;
-    }
-
-    return $items;
   }
 
   public function getApplicationSearchDocumentTypes() {

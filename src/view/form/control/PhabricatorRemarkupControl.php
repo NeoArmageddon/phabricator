@@ -203,6 +203,10 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
         $classes[] = 'remarkup-assist-button';
       }
 
+      if ($action == 'fa-cloud-upload') {
+        $classes[] = 'remarkup-assist-upload';
+      }
+
       $href = idx($spec, 'href', '#');
       if ($href == '#') {
         $meta = array('action' => $action);
@@ -260,15 +264,14 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
       ),
       $buttons);
 
-    $monospaced_textareas = null;
-    $monospaced_textareas_class = null;
+    $use_monospaced = $viewer->compareUserSetting(
+      PhabricatorMonospacedTextareasSetting::SETTINGKEY,
+      PhabricatorMonospacedTextareasSetting::VALUE_TEXT_MONOSPACED);
 
-    $monospaced_textareas = $viewer
-      ->loadPreferences()
-      ->getPreference(
-        PhabricatorUserPreferences::PREFERENCE_MONOSPACED_TEXTAREAS);
-    if ($monospaced_textareas == 'enabled') {
+    if ($use_monospaced) {
       $monospaced_textareas_class = 'PhabricatorMonospaced';
+    } else {
+      $monospaced_textareas_class = null;
     }
 
     $this->setCustomClass(

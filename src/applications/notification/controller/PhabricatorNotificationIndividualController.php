@@ -30,7 +30,10 @@ final class PhabricatorNotificationIndividualController
       return $this->buildEmptyResponse();
     }
 
-    $builder = new PhabricatorNotificationBuilder(array($story));
+    $builder = id(new PhabricatorNotificationBuilder(array($story)))
+      ->setUser($viewer)
+      ->setShowTimestamps(false);
+
     $content = $builder->buildView()->render();
     $dict = $builder->buildDict();
     $data = $dict[0];

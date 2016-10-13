@@ -15,9 +15,15 @@ final class PhameBlogEditor
     $types = parent::getTransactionTypes();
 
     $types[] = PhameBlogTransaction::TYPE_NAME;
+    $types[] = PhameBlogTransaction::TYPE_SUBTITLE;
     $types[] = PhameBlogTransaction::TYPE_DESCRIPTION;
-    $types[] = PhameBlogTransaction::TYPE_DOMAIN;
+    $types[] = PhameBlogTransaction::TYPE_FULLDOMAIN;
+    $types[] = PhameBlogTransaction::TYPE_PARENTSITE;
+    $types[] = PhameBlogTransaction::TYPE_PARENTDOMAIN;
     $types[] = PhameBlogTransaction::TYPE_STATUS;
+    $types[] = PhameBlogTransaction::TYPE_HEADERIMAGE;
+    $types[] = PhameBlogTransaction::TYPE_PROFILEIMAGE;
+
     $types[] = PhabricatorTransactions::TYPE_VIEW_POLICY;
     $types[] = PhabricatorTransactions::TYPE_EDIT_POLICY;
 
@@ -31,10 +37,20 @@ final class PhameBlogEditor
     switch ($xaction->getTransactionType()) {
       case PhameBlogTransaction::TYPE_NAME:
         return $object->getName();
+      case PhameBlogTransaction::TYPE_SUBTITLE:
+        return $object->getSubtitle();
       case PhameBlogTransaction::TYPE_DESCRIPTION:
         return $object->getDescription();
-      case PhameBlogTransaction::TYPE_DOMAIN:
-        return $object->getDomain();
+      case PhameBlogTransaction::TYPE_FULLDOMAIN:
+        return $object->getDomainFullURI();
+      case PhameBlogTransaction::TYPE_PARENTSITE:
+        return $object->getParentSite();
+      case PhameBlogTransaction::TYPE_PARENTDOMAIN:
+        return $object->getParentDomain();
+      case PhameBlogTransaction::TYPE_PROFILEIMAGE:
+        return $object->getProfileImagePHID();
+      case PhameBlogTransaction::TYPE_HEADERIMAGE:
+        return $object->getHeaderImagePHID();
       case PhameBlogTransaction::TYPE_STATUS:
         return $object->getStatus();
     }
@@ -46,10 +62,15 @@ final class PhameBlogEditor
 
     switch ($xaction->getTransactionType()) {
       case PhameBlogTransaction::TYPE_NAME:
+      case PhameBlogTransaction::TYPE_SUBTITLE:
       case PhameBlogTransaction::TYPE_DESCRIPTION:
       case PhameBlogTransaction::TYPE_STATUS:
+      case PhameBlogTransaction::TYPE_PARENTSITE:
+      case PhameBlogTransaction::TYPE_PARENTDOMAIN:
+      case PhameBlogTransaction::TYPE_PROFILEIMAGE:
+      case PhameBlogTransaction::TYPE_HEADERIMAGE:
         return $xaction->getNewValue();
-      case PhameBlogTransaction::TYPE_DOMAIN:
+      case PhameBlogTransaction::TYPE_FULLDOMAIN:
         $domain = $xaction->getNewValue();
         if (!strlen($xaction->getNewValue())) {
           return null;
@@ -65,12 +86,31 @@ final class PhameBlogEditor
     switch ($xaction->getTransactionType()) {
       case PhameBlogTransaction::TYPE_NAME:
         return $object->setName($xaction->getNewValue());
+      case PhameBlogTransaction::TYPE_SUBTITLE:
+        return $object->setSubtitle($xaction->getNewValue());
       case PhameBlogTransaction::TYPE_DESCRIPTION:
         return $object->setDescription($xaction->getNewValue());
-      case PhameBlogTransaction::TYPE_DOMAIN:
-        return $object->setDomain($xaction->getNewValue());
+      case PhameBlogTransaction::TYPE_FULLDOMAIN:
+        $new_value = $xaction->getNewValue();
+        if (strlen($new_value)) {
+          $uri = new PhutilURI($new_value);
+          $domain = $uri->getDomain();
+          $object->setDomain($domain);
+        } else {
+          $object->setDomain(null);
+        }
+        $object->setDomainFullURI($new_value);
+        return;
+      case PhameBlogTransaction::TYPE_PROFILEIMAGE:
+        return $object->setProfileImagePHID($xaction->getNewValue());
+      case PhameBlogTransaction::TYPE_HEADERIMAGE:
+        return $object->setHeaderImagePHID($xaction->getNewValue());
       case PhameBlogTransaction::TYPE_STATUS:
         return $object->setStatus($xaction->getNewValue());
+      case PhameBlogTransaction::TYPE_PARENTSITE:
+        return $object->setParentSite($xaction->getNewValue());
+      case PhameBlogTransaction::TYPE_PARENTDOMAIN:
+        return $object->setParentDomain($xaction->getNewValue());
     }
 
     return parent::applyCustomInternalTransaction($object, $xaction);
@@ -82,8 +122,13 @@ final class PhameBlogEditor
 
     switch ($xaction->getTransactionType()) {
       case PhameBlogTransaction::TYPE_NAME:
+      case PhameBlogTransaction::TYPE_SUBTITLE:
       case PhameBlogTransaction::TYPE_DESCRIPTION:
-      case PhameBlogTransaction::TYPE_DOMAIN:
+      case PhameBlogTransaction::TYPE_FULLDOMAIN:
+      case PhameBlogTransaction::TYPE_PARENTSITE:
+      case PhameBlogTransaction::TYPE_PARENTDOMAIN:
+      case PhameBlogTransaction::TYPE_HEADERIMAGE:
+      case PhameBlogTransaction::TYPE_PROFILEIMAGE:
       case PhameBlogTransaction::TYPE_STATUS:
         return;
     }
@@ -115,8 +160,54 @@ final class PhameBlogEditor
           $error->setIsMissingFieldError(true);
           $errors[] = $error;
         }
+
+        foreach ($xactions as $xaction) {
+          $new = $xaction->getNewValue();
+          if (phutil_utf8_strlen($new) > 64) {
+            $errors[] = new PhabricatorApplicationTransactionValidationError(
+              $type,
+              pht('Invalid'),
+              pht(
+                'The selected blog title is too long. The maximum length '.
+                'of a blog title is 64 characters.'),
+              $xaction);
+          }
+        }
         break;
-      case PhameBlogTransaction::TYPE_DOMAIN:
+      case PhameBlogTransaction::TYPE_SUBTITLE:
+        foreach ($xactions as $xaction) {
+          $new = $xaction->getNewValue();
+          if (phutil_utf8_strlen($new) > 64) {
+            $errors[] = new PhabricatorApplicationTransactionValidationError(
+              $type,
+              pht('Invalid'),
+              pht(
+                'The selected blog subtitle is too long. The maximum length '.
+                'of a blog subtitle is 64 characters.'),
+              $xaction);
+          }
+        }
+        break;
+      case PhameBlogTransaction::TYPE_PARENTDOMAIN:
+        if (!$xactions) {
+          continue;
+        }
+        $parent_domain = last($xactions)->getNewValue();
+        if (empty($parent_domain)) {
+          continue;
+        }
+        try {
+          PhabricatorEnv::requireValidRemoteURIForLink($parent_domain);
+        } catch (Exception $ex) {
+          $error = new PhabricatorApplicationTransactionValidationError(
+            $type,
+            pht('Invalid URI'),
+            pht('Parent Domain must be set to a valid Remote URI.'),
+            nonempty(last($xactions), null));
+          $errors[] = $error;
+        }
+        break;
+      case PhameBlogTransaction::TYPE_FULLDOMAIN:
         if (!$xactions) {
           continue;
         }
@@ -145,9 +236,11 @@ final class PhameBlogEditor
             nonempty(last($xactions), null));
           $errors[] = $error;
         }
+        $domain = new PhutilURI($custom_domain);
+        $domain = $domain->getDomain();
         $duplicate_blog = id(new PhameBlogQuery())
           ->setViewer(PhabricatorUser::getOmnipotentUser())
-          ->withDomain($custom_domain)
+          ->withDomain($domain)
           ->executeOne();
         if ($duplicate_blog && $duplicate_blog->getID() != $object->getID()) {
           $error = new PhabricatorApplicationTransactionValidationError(
@@ -227,7 +320,7 @@ final class PhameBlogEditor
 
 
   protected function supportsSearch() {
-    return false;
+    return true;
   }
 
   protected function shouldApplyHeraldRules(

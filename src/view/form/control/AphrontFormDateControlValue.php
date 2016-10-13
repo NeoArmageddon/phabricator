@@ -59,27 +59,6 @@ final class AphrontFormDateControlValue extends Phobject {
     return $this->viewer;
   }
 
-  public static function newFromParts(
-    PhabricatorUser $viewer,
-    $year,
-    $month,
-    $day,
-    $time = null,
-    $enabled = true) {
-
-    $value = new AphrontFormDateControlValue();
-    $value->viewer = $viewer;
-    list($value->valueDate, $value->valueTime) =
-      $value->getFormattedDateFromParts(
-        $year,
-        $month,
-        $day,
-        coalesce($time, '12:00 AM'));
-    $value->valueEnabled = $enabled;
-
-    return $value;
-  }
-
   public static function newFromRequest(AphrontRequest $request, $key) {
     $value = new AphrontFormDateControlValue();
     $value->viewer = $request->getViewer();
@@ -207,13 +186,15 @@ final class AphrontFormDateControlValue extends Phobject {
   }
 
   private function getTimeFormat() {
-    return $this->getViewer()
-      ->getPreference(PhabricatorUserPreferences::PREFERENCE_TIME_FORMAT);
+    $viewer = $this->getViewer();
+    $time_key = PhabricatorTimeFormatSetting::SETTINGKEY;
+    return $viewer->getUserSetting($time_key);
   }
 
   private function getDateFormat() {
-    return $this->getViewer()
-      ->getPreference(PhabricatorUserPreferences::PREFERENCE_DATE_FORMAT);
+    $viewer = $this->getViewer();
+    $date_key = PhabricatorDateFormatSetting::SETTINGKEY;
+    return $viewer->getUserSetting($date_key);
   }
 
   private function getFormattedDateFromDate($date, $time) {

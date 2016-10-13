@@ -48,6 +48,16 @@ final class PhamePostViewController
                 'Use "Publish" to publish this post.')));
     }
 
+    if ($post->isArchived()) {
+      $document->appendChild(
+        id(new PHUIInfoView())
+          ->setSeverity(PHUIInfoView::SEVERITY_ERROR)
+          ->setTitle(pht('Archived Post'))
+          ->appendChild(
+            pht('Only you can see this archived post until you publish it. '.
+                'Use "Publish" to publish this post.')));
+    }
+
     if (!$post->getBlog()) {
       $document->appendChild(
         id(new PHUIInfoView())
@@ -78,16 +88,22 @@ final class PhamePostViewController
       ->executeOne();
     $blogger_profile = $blogger->loadUserProfile();
 
+
+    $author_uri = '/p/'.$blogger->getUsername().'/';
+    $author_uri = PhabricatorEnv::getURI($author_uri);
+
     $author = phutil_tag(
       'a',
       array(
-        'href' => '/p/'.$blogger->getUsername().'/',
+        'href' => $author_uri,
       ),
       $blogger->getUsername());
 
     $date = phabricator_datetime($post->getDatePublished(), $viewer);
     if ($post->isDraft()) {
       $subtitle = pht('Unpublished draft by %s.', $author);
+    } else if ($post->isArchived()) {
+      $subtitle = pht('Archived post by %s.', $author);
     } else {
       $subtitle = pht('Written by %s on %s.', $author, $date);
     }
@@ -102,23 +118,26 @@ final class PhamePostViewController
         array(
           $user_icon,
           ' ',
-          $blogger_profile->getTitle(),
+          $blogger_profile->getDisplayTitle(),
         ))
       ->setImage($blogger->getProfileImageURI())
-      ->setImageHref('/p/'.$blogger->getUsername());
+      ->setImageHref($author_uri);
 
+    $monogram = $post->getMonogram();
     $timeline = $this->buildTransactionTimeline(
       $post,
       id(new PhamePostTransactionQuery())
       ->withTransactionTypes(array(PhabricatorTransactions::TYPE_COMMENT)));
-    $timeline = phutil_tag_div('phui-document-view-pro-box', $timeline);
+    $timeline->setQuoteRef($monogram);
 
     if ($is_external) {
       $add_comment = null;
     } else {
-      $add_comment = $this->buildCommentForm($post);
-      $add_comment = phutil_tag_div('mlb mlt', $add_comment);
+      $add_comment = $this->buildCommentForm($post, $timeline);
+      $add_comment = phutil_tag_div('mlb mlt phame-comment-view', $add_comment);
     }
+
+    $timeline = phutil_tag_div('phui-document-view-pro-box', $timeline);
 
     list($prev, $next) = $this->loadAdjacentPosts($post);
 
@@ -126,12 +145,16 @@ final class PhamePostViewController
       ->setUser($viewer)
       ->setObject($post);
 
+    $is_live = $this->getIsLive();
+    $is_external = $this->getIsExternal();
     $next_view = new PhameNextPostView();
     if ($next) {
-      $next_view->setNext($next->getTitle(), $next->getViewURI());
+      $next_view->setNext($next->getTitle(),
+        $next->getBestURI($is_live, $is_external));
     }
     if ($prev) {
-      $next_view->setPrevious($prev->getTitle(), $prev->getViewURI());
+      $next_view->setPrevious($prev->getTitle(),
+        $prev->getBestURI($is_live, $is_external));
     }
 
     $document->setFoot($next_view);
@@ -203,12 +226,34 @@ final class PhamePostViewController
           ->setName(pht('Publish'))
           ->setDisabled(!$can_edit)
           ->setWorkflow(true));
+      $actions->addAction(
+        id(new PhabricatorActionView())
+          ->setIcon('fa-ban')
+          ->setHref($this->getApplicationURI('post/archive/'.$id.'/'))
+          ->setName(pht('Archive'))
+          ->setDisabled(!$can_edit)
+          ->setWorkflow(true));
+    } else if ($post->isArchived()) {
+      $actions->addAction(
+        id(new PhabricatorActionView())
+          ->setIcon('fa-eye')
+          ->setHref($this->getApplicationURI('post/publish/'.$id.'/'))
+          ->setName(pht('Publish'))
+          ->setDisabled(!$can_edit)
+          ->setWorkflow(true));
     } else {
       $actions->addAction(
         id(new PhabricatorActionView())
           ->setIcon('fa-eye-slash')
           ->setHref($this->getApplicationURI('post/unpublish/'.$id.'/'))
           ->setName(pht('Unpublish'))
+          ->setDisabled(!$can_edit)
+          ->setWorkflow(true));
+      $actions->addAction(
+        id(new PhabricatorActionView())
+          ->setIcon('fa-ban')
+          ->setHref($this->getApplicationURI('post/archive/'.$id.'/'))
+          ->setName(pht('Archive'))
           ->setDisabled(!$can_edit)
           ->setWorkflow(true));
     }
@@ -219,29 +264,25 @@ final class PhamePostViewController
       $live_name = pht('View Live');
     }
 
-    $actions->addAction(
-      id(new PhabricatorActionView())
-        ->setUser($viewer)
-        ->setIcon('fa-globe')
-        ->setHref($post->getLiveURI())
-        ->setName($live_name));
+    if (!$post->isArchived()) {
+      $actions->addAction(
+        id(new PhabricatorActionView())
+          ->setUser($viewer)
+          ->setIcon('fa-globe')
+          ->setHref($post->getLiveURI())
+          ->setName($live_name));
+    }
 
     return $actions;
   }
 
-  private function buildCommentForm(PhamePost $post) {
+  private function buildCommentForm(PhamePost $post, $timeline) {
     $viewer = $this->getViewer();
 
-    $draft = PhabricatorDraft::newFromUserAndKey(
-      $viewer, $post->getPHID());
-
-    $box = id(new PhabricatorApplicationTransactionCommentView())
-      ->setUser($viewer)
-      ->setObjectPHID($post->getPHID())
-      ->setDraft($draft)
-      ->setHeaderText(pht('Add Comment'))
-      ->setAction($this->getApplicationURI('post/comment/'.$post->getID().'/'))
-      ->setSubmitButtonName(pht('Add Comment'));
+    $box = id(new PhamePostEditEngine())
+      ->setViewer($viewer)
+      ->buildEditEngineCommentView($post)
+      ->setTransactionTimeline($timeline);
 
     return phutil_tag_div('phui-document-view-pro-box', $box);
   }
@@ -251,7 +292,7 @@ final class PhamePostViewController
 
     $query = id(new PhamePostQuery())
       ->setViewer($viewer)
-      ->withVisibility(PhameConstants::VISIBILITY_PUBLISHED)
+      ->withVisibility(array(PhameConstants::VISIBILITY_PUBLISHED))
       ->withBlogPHIDs(array($post->getBlog()->getPHID()))
       ->setLimit(1);
 

@@ -26,6 +26,17 @@ abstract class PhabricatorRepositoryCommitParserWorker
         pht('Commit "%s" does not exist.', $commit_id));
     }
 
+    if ($commit->isUnreachable()) {
+      throw new PhabricatorWorkerPermanentFailureException(
+        pht(
+          'Commit "%s" (with internal ID "%s") is no longer reachable from '.
+          'any branch, tag, or ref in this repository, so it will not be '.
+          'imported. This usually means that the branch the commit was on '.
+          'was deleted or overwritten.',
+          $commit->getMonogram(),
+          $commit_id));
+    }
+
     $this->commit = $commit;
 
     return $commit;
@@ -44,20 +55,56 @@ abstract class PhabricatorRepositoryCommitParserWorker
     return !idx($this->getTaskData(), 'only');
   }
 
+  protected function getImportStepFlag() {
+    return null;
+  }
+
+  final protected function shouldSkipImportStep() {
+    // If this step has already been performed and this is a "natural" task
+    // which was queued by the normal daemons, decline to do the work again.
+    // This mitigates races if commits are rapidly deleted and revived.
+    $flag = $this->getImportStepFlag();
+    if (!$flag) {
+      // This step doesn't have an associated flag.
+      return false;
+    }
+
+    $commit = $this->commit;
+    if (!$commit->isPartiallyImported($flag)) {
+      // This commit doesn't have the flag set yet.
+      return false;
+    }
+
+
+    if (!$this->shouldQueueFollowupTasks()) {
+      // This task was queued by administrative tools, so do the work even
+      // if it duplicates existing work.
+      return false;
+    }
+
+    $this->log(
+      "%s\n",
+      pht(
+        'Skipping import step; this step was previously completed for '.
+        'this commit.'));
+
+    return true;
+  }
+
   abstract protected function parseCommit(
     PhabricatorRepository $repository,
     PhabricatorRepositoryCommit $commit);
 
-  protected function isBadCommit(PhabricatorRepositoryCommit $commit) {
-    $repository = new PhabricatorRepository();
+  protected function loadCommitHint(PhabricatorRepositoryCommit $commit) {
+    $viewer = PhabricatorUser::getOmnipotentUser();
 
-    $bad_commit = queryfx_one(
-      $repository->establishConnection('w'),
-      'SELECT * FROM %T WHERE fullCommitName = %s',
-      PhabricatorRepository::TABLE_BADCOMMIT,
-      $commit->getMonogram());
+    $repository = $commit->getRepository();
 
-    return (bool)$bad_commit;
+    return id(new DiffusionCommitHintQuery())
+      ->setViewer($viewer)
+      ->withRepositoryPHIDs(array($repository->getPHID()))
+      ->withOldCommitIdentifiers(array($commit->getCommitIdentifier()))
+      ->executeOne();
   }
 
   public function renderForDisplay(PhabricatorUser $viewer) {

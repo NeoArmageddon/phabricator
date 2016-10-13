@@ -105,28 +105,31 @@ final class DiffusionBrowseController extends DiffusionController {
 
     $path = $drequest->getPath();
 
-    $preferences = $viewer->loadPreferences();
+    $blame_key = PhabricatorDiffusionBlameSetting::SETTINGKEY;
+    $color_key = PhabricatorDiffusionColorSetting::SETTINGKEY;
 
     $show_blame = $request->getBool(
       'blame',
-      $preferences->getPreference(
-        PhabricatorUserPreferences::PREFERENCE_DIFFUSION_BLAME,
-        false));
+      $viewer->getUserSetting($blame_key));
+
     $show_color = $request->getBool(
       'color',
-      $preferences->getPreference(
-        PhabricatorUserPreferences::PREFERENCE_DIFFUSION_COLOR,
-        true));
+      $viewer->getUserSetting($color_key));
 
     $view = $request->getStr('view');
     if ($request->isFormPost() && $view != 'raw' && $viewer->isLoggedIn()) {
-      $preferences->setPreference(
-        PhabricatorUserPreferences::PREFERENCE_DIFFUSION_BLAME,
-        $show_blame);
-      $preferences->setPreference(
-        PhabricatorUserPreferences::PREFERENCE_DIFFUSION_COLOR,
-        $show_color);
-      $preferences->save();
+      $preferences = PhabricatorUserPreferences::loadUserPreferences($viewer);
+
+      $editor = id(new PhabricatorUserPreferencesEditor())
+        ->setActor($viewer)
+        ->setContentSourceFromRequest($request)
+        ->setContinueOnNoEffect(true)
+        ->setContinueOnMissingFields(true);
+
+      $xactions = array();
+      $xactions[] = $preferences->newTransaction($blame_key, $show_blame);
+      $xactions[] = $preferences->newTransaction($color_key, $show_color);
+      $editor->applyTransactions($preferences, $xactions);
 
       $uri = $request->getRequestURI()
         ->alter('blame', null)
@@ -679,16 +682,20 @@ final class DiffusionBrowseController extends DiffusionController {
         $blame_commits,
         $show_blame);
     } else {
-      if ($can_highlight) {
-        require_celerity_resource('syntax-highlighting-css');
+      require_celerity_resource('syntax-highlighting-css');
 
+      if ($can_highlight) {
         $highlighted = PhabricatorSyntaxHighlighter::highlightWithFilename(
           $path,
           $file_corpus);
-        $lines = phutil_split_lines($highlighted);
       } else {
-        $lines = phutil_split_lines($file_corpus);
+        // Highlight as plain text to escape the content properly.
+        $highlighted = PhabricatorSyntaxHighlighter::highlightWithLanguage(
+          'txt',
+          $file_corpus);
       }
+
+      $lines = phutil_split_lines($highlighted);
 
       $rows = $this->buildDisplayRows(
         $lines,
@@ -1520,19 +1527,36 @@ final class DiffusionBrowseController extends DiffusionController {
 
   private function getBeforeLineNumber($target_commit) {
     $drequest = $this->getDiffusionRequest();
+    $viewer = $this->getViewer();
 
     $line = $drequest->getLine();
     if (!$line) {
       return null;
     }
 
-    $raw_diff = $this->callConduitWithDiffusionRequest(
+    $diff_info = $this->callConduitWithDiffusionRequest(
       'diffusion.rawdiffquery',
       array(
         'commit' => $drequest->getCommit(),
         'path' => $drequest->getPath(),
         'againstCommit' => $target_commit,
       ));
+
+    $file_phid = $diff_info['filePHID'];
+    $file = id(new PhabricatorFileQuery())
+      ->setViewer($viewer)
+      ->withPHIDs(array($file_phid))
+      ->executeOne();
+    if (!$file) {
+      throw new Exception(
+        pht(
+          'Failed to load file ("%s") returned by "%s".',
+          $file_phid,
+          'diffusion.rawdiffquery.'));
+    }
+
+    $raw_diff = $file->loadFileData();
+
     $old_line = 0;
     $new_line = 0;
 

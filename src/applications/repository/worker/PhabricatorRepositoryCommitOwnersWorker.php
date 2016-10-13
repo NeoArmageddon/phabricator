@@ -3,14 +3,18 @@
 final class PhabricatorRepositoryCommitOwnersWorker
   extends PhabricatorRepositoryCommitParserWorker {
 
+  protected function getImportStepFlag() {
+    return PhabricatorRepositoryCommit::IMPORTED_OWNERS;
+  }
+
   protected function parseCommit(
     PhabricatorRepository $repository,
     PhabricatorRepositoryCommit $commit) {
 
-    $this->triggerOwnerAudits($repository, $commit);
-
-    $commit->writeImportStatusFlag(
-      PhabricatorRepositoryCommit::IMPORTED_OWNERS);
+    if (!$this->shouldSkipImportStep()) {
+      $this->triggerOwnerAudits($repository, $commit);
+      $commit->writeImportStatusFlag($this->getImportStepFlag());
+    }
 
     if ($this->shouldQueueFollowupTasks()) {
       $this->queueTask(
@@ -70,11 +74,6 @@ final class PhabricatorRepositoryCommitOwnersWorker
       $request = idx($requests, $package->getPHID());
       if ($request) {
         // Don't update request if it exists already.
-        continue;
-      }
-
-      if ($package->isArchived()) {
-        // Don't trigger audits if the package is archived.
         continue;
       }
 

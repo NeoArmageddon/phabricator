@@ -16,6 +16,7 @@ final class PhabricatorFileQuery
   private $names;
   private $isPartial;
   private $needTransforms;
+  private $builtinKeys;
 
   public function withIDs(array $ids) {
     $this->ids = $ids;
@@ -44,6 +45,11 @@ final class PhabricatorFileQuery
 
   public function withContentHashes(array $content_hashes) {
     $this->contentHashes = $content_hashes;
+    return $this;
+  }
+
+  public function withBuiltinKeys(array $keys) {
+    $this->builtinKeys = $keys;
     return $this;
   }
 
@@ -134,6 +140,9 @@ final class PhabricatorFileQuery
       return $files;
     }
 
+    $viewer = $this->getViewer();
+    $is_omnipotent = $viewer->isOmnipotent();
+
     // We need to load attached objects to perform policy checks for files.
     // First, load the edges.
 
@@ -153,6 +162,13 @@ final class PhabricatorFileQuery
         // If this is a profile image, don't bother loading related files.
         // It will always be visible, and we can get into trouble if we try
         // to load objects and end up stuck in a cycle. See T8478.
+        continue;
+      }
+
+      if ($is_omnipotent) {
+        // If the viewer is omnipotent, we don't need to load the associated
+        // objects either since they can certainly see the object. Skipping
+        // this can improve performance and prevent cycles.
         continue;
       }
 
@@ -372,6 +388,13 @@ final class PhabricatorFileQuery
         $conn,
         'isPartial = %d',
         (int)$this->isPartial);
+    }
+
+    if ($this->builtinKeys !== null) {
+      $where[] = qsprintf(
+        $conn,
+        'builtinKey IN (%Ls)',
+        $this->builtinKeys);
     }
 
     return $where;

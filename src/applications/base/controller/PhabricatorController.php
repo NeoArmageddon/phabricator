@@ -104,12 +104,12 @@ abstract class PhabricatorController extends AphrontController {
       $request->setUser($user);
     }
 
-    PhabricatorEnv::setLocaleCode($user->getTranslation());
+    id(new PhabricatorAuthSessionEngine())
+      ->willServeRequestForUser($user);
 
-    $preferences = $user->loadPreferences();
     if (PhabricatorEnv::getEnvConfig('darkconsole.enabled')) {
-      $dark_console = PhabricatorUserPreferences::PREFERENCE_DARK_CONSOLE;
-      if ($preferences->getPreference($dark_console) ||
+      $dark_console = PhabricatorDarkConsoleSetting::SETTINGKEY;
+      if ($user->getUserSetting($dark_console) ||
          PhabricatorEnv::getEnvConfig('darkconsole.always-on')) {
         $console = new DarkConsoleCore();
         $request->getApplicationConfiguration()->setConsole($console);
@@ -474,8 +474,11 @@ abstract class PhabricatorController extends AphrontController {
   public function newCurtainView($object) {
     $viewer = $this->getViewer();
 
+    $action_id = celerity_generate_unique_node_id();
+
     $action_list = id(new PhabricatorActionListView())
-      ->setViewer($viewer);
+      ->setViewer($viewer)
+      ->setID($action_id);
 
     // NOTE: Applications (objects of class PhabricatorApplication) can't
     // currently be set here, although they don't need any of the extensions
@@ -569,46 +572,6 @@ abstract class PhabricatorController extends AphrontController {
   public function buildStandardPageResponse($view, array $data) {
     $page = $this->buildStandardPageView();
     $page->appendChild($view);
-    return $page->produceAphrontResponse();
-  }
-
-
-  /**
-   * DEPRECATED. Use @{method:newPage}.
-   */
-  public function buildApplicationPage($view, array $options) {
-    $page = $this->newPage();
-
-    $title = PhabricatorEnv::getEnvConfig('phabricator.serious-business') ?
-      'Phabricator' :
-      pht('Bacon Ice Cream for Breakfast');
-
-    $page->setTitle(idx($options, 'title', $title));
-
-    if (idx($options, 'class')) {
-      $page->addClass($options['class']);
-    }
-
-    if (!($view instanceof AphrontSideNavFilterView)) {
-      $nav = new AphrontSideNavFilterView();
-      $nav->appendChild($view);
-      $view = $nav;
-    }
-
-    $page->appendChild($view);
-
-    $object_phids = idx($options, 'pageObjects', array());
-    if ($object_phids) {
-      $page->setPageObjectPHIDs($object_phids);
-    }
-
-    if (!idx($options, 'device', true)) {
-      $page->setDeviceReady(false);
-    }
-
-    $page->setShowFooter(idx($options, 'showFooter', true));
-    $page->setShowChrome(idx($options, 'chrome', true));
-
     return $page->produceAphrontResponse();
   }
 

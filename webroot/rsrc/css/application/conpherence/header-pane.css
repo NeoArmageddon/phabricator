@@ -1,0 +1,80 @@
+/**
+ * @provides conpherence-header-pane-css
+ */
+
+.conpherence-header-pane .phui-header-shell {
+  padding: 8px 16px 10px;
+  min-height: 38px;
+}
+
+.conpherence-header-pane .phui-header-header {
+  font-size: 16px;
+  font-family: 'Aleo', {$fontfamily};
+  color: #000;
+}
+
+.conpherence-header-pane .phui-header-subheader {
+  color: {$lightgreytext};
+  padding: 0;
+  font-size: 12px;
+  margin: 0;
+}
+
+.conpherence-header-pane .phui-header-col1 {
+  width: 46px;
+  height: 35px;
+}
+
+.conpherence-header-pane .phui-header-image {
+  height: 35px;
+  width: 35px;
+  background-size: 35px;
+  position: absolute;
+  top: 4px;
+  left: 0;
+}
+
+.conpherence-header-pane .phui-header-image-href {
+  position: inherit;
+}
+
+.conpherence-header-pane .phui-header-col2 {
+  height: 40px;
+}
+
+.conpherence-header-pane .phui-header-action-list .phui-header-action-item
+  .phui-icon-view {
+  height: 18px;
+  width: 24px;
+  font-size: 14px;
+  line-height: 23px;
+  display: block;
+}
+
+.device .hide-on-device {
+  display: none;
+}
+
+.device-phone .conpherence-header-pane .phui-header-col3 {
+  vertical-align: middle;
+}
+
+.conpherence-participant-toggle.phui-icon-circle {
+  text-decoration: none;
+  border-color: {$sky};
+  cursor: pointer;
+}
+
+.conpherence-participant-toggle.phui-icon-circle .phui-icon-view {
+    color: {$sky};
+}
+
+.hide-widgets .conpherence-participant-toggle.phui-icon-circle {
+  text-decoration: none;
+  border-color: {$lightblueborder};
+  cursor: pointer;
+}
+
+.hide-widgets .conpherence-participant-toggle.phui-icon-circle .phui-icon-view {
+    color: {$lightblueborder};
+}
