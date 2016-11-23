@@ -29,7 +29,7 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
 
     // We need to have this if previews render images, since Ajax can not
     // currently ship JS or CSS.
-    require_celerity_resource('lightbox-attachment-css');
+    require_celerity_resource('phui-lightbox-css');
 
     if (!$this->getDisabled()) {
       Javelin::initBehavior(
@@ -158,7 +158,7 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
       'align' => 'right',
     );
 
-    $actions['fa-life-bouy'] = array(
+    $actions['fa-book'] = array(
       'tip' => pht('Help'),
       'align' => 'right',
       'href'  => PhabricatorEnv::getDoclink('Remarkup Reference'),

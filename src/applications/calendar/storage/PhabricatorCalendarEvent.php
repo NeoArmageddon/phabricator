@@ -4,6 +4,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
   implements
     PhabricatorPolicyInterface,
     PhabricatorExtendedPolicyInterface,
+    PhabricatorPolicyCodexInterface,
     PhabricatorProjectInterface,
     PhabricatorMarkupInterface,
     PhabricatorApplicationTransactionInterface,
@@ -27,7 +28,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
 
   protected $isRecurring = 0;
 
-  private $isGhostEvent = false;
+  protected $seriesParentPHID;
   protected $instanceOfEventPHID;
   protected $sequenceIndex;
 
@@ -49,16 +50,12 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
   private $parentEvent = self::ATTACHABLE;
   private $invitees = self::ATTACHABLE;
   private $importSource = self::ATTACHABLE;
+  private $rsvps = self::ATTACHABLE;
 
   private $viewerTimezone;
 
-  // TODO: DEPRECATED. Remove once we're sure the migrations worked.
-  protected $allDayDateFrom;
-  protected $allDayDateTo;
-  protected $dateFrom;
-  protected $dateTo;
-  protected $recurrenceEndDate;
-  protected $recurrenceFrequency = array();
+  private $isGhostEvent = false;
+  private $stubInvitees;
 
   public static function initializeNewCalendarEvent(PhabricatorUser $actor) {
     $app = id(new PhabricatorApplicationQuery())
@@ -75,14 +72,21 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
 
     $default_icon = 'fa-calendar';
 
-    $datetime_start = PhutilCalendarAbsoluteDateTime::newFromEpoch(
-      $now,
-      $actor->getTimezoneIdentifier());
-    $datetime_end = $datetime_start->newRelativeDateTime('PT1H');
+    $datetime_defaults = self::newDefaultEventDateTimes(
+      $actor,
+      $now);
+    list($datetime_start, $datetime_end) = $datetime_defaults;
+
+    // When importing events from a context like "bin/calendar reload", we may
+    // be acting as the omnipotent user.
+    $host_phid = $actor->getPHID();
+    if (!$host_phid) {
+      $host_phid = $app->getPHID();
+    }
 
     return id(new PhabricatorCalendarEvent())
       ->setDescription('')
-      ->setHostPHID($actor->getPHID())
+      ->setHostPHID($host_phid)
       ->setIsCancelled(0)
       ->setIsAllDay(0)
       ->setIsStub(0)
@@ -92,74 +96,35 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       ->setEditPolicy($edit_policy)
       ->setSpacePHID($actor->getDefaultSpacePHID())
       ->attachInvitees(array())
-      ->setDateFrom(0)
-      ->setDateTo(0)
-      ->setAllDayDateFrom(0)
-      ->setAllDayDateTo(0)
       ->setStartDateTime($datetime_start)
       ->setEndDateTime($datetime_end)
       ->attachImportSource(null)
       ->applyViewerTimezone($actor);
   }
 
-  public static function newFromDocumentNode(
-    PhabricatorUser $actor,
-    PhutilCalendarEventNode $node) {
-    $timezone = $actor->getTimezoneIdentifier();
+  public static function newDefaultEventDateTimes(
+    PhabricatorUser $viewer,
+    $now) {
 
-    $uid = $node->getUID();
+    $datetime_start = PhutilCalendarAbsoluteDateTime::newFromEpoch(
+      $now,
+      $viewer->getTimezoneIdentifier());
 
-    $name = $node->getName();
-    if (!strlen($name)) {
-      if (strlen($uid)) {
-        $name = pht('Unnamed Event "%s"', $node->getUID());
-      } else {
-        $name = pht('Unnamed Imported Event');
-      }
-    }
+    // Advance the time by an hour, then round downwards to the nearest hour.
+    // For example, if it is currently 3:25 PM, we suggest a default start time
+    // of 4 PM.
+    $datetime_start = $datetime_start
+      ->newRelativeDateTime('PT1H')
+      ->newAbsoluteDateTime();
+    $datetime_start->setMinute(0);
+    $datetime_start->setSecond(0);
 
-    $description = $node->getDescription();
+    // Default the end time to an hour after the start time.
+    $datetime_end = $datetime_start
+      ->newRelativeDateTime('PT1H')
+      ->newAbsoluteDateTime();
 
-    $instance_iso = $node->getRecurrenceID();
-    if (strlen($instance_iso)) {
-      $instance_datetime = PhutilCalendarAbsoluteDateTime::newFromISO8601(
-        $instance_iso);
-      $instance_epoch = $instance_datetime->getEpoch();
-    } else {
-      $instance_epoch = null;
-    }
-    $full_uid = $uid.'/'.$instance_epoch;
-
-    $start_datetime = $node->getStartDateTime()
-      ->setViewerTimezone($timezone);
-    $end_datetime = $node->getEndDateTime()
-      ->setViewerTimezone($timezone);
-
-    $rrule = $node->getRecurrenceRule();
-
-    $event = self::initializeNewCalendarEvent($actor)
-      ->setName($name)
-      ->setStartDateTime($start_datetime)
-      ->setEndDateTime($end_datetime)
-      ->setImportUID($full_uid)
-      ->setUTCInstanceEpoch($instance_epoch);
-
-    if (strlen($description)) {
-      $event->setDescription($description);
-    }
-
-    if ($rrule) {
-      $event->setRecurrenceRule($rrule);
-      $event->setIsRecurring(1);
-
-      $until_datetime = $rrule->getUntil()
-        ->setViewerTimezone($timezone);
-      if ($until_datetime) {
-        $event->setUntilDateTime($until_datetime);
-      }
-    }
-
-    return $event;
+    return array($datetime_start, $datetime_end);
   }
 
   private function newChild(
@@ -173,17 +138,20 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
           'a recurring parent event!'));
     }
 
+    $series_phid = $this->getSeriesParentPHID();
+    if (!$series_phid) {
+      $series_phid = $this->getPHID();
+    }
+
     $child = id(new self())
       ->setIsCancelled(0)
       ->setIsStub(0)
       ->setInstanceOfEventPHID($this->getPHID())
+      ->setSeriesParentPHID($series_phid)
       ->setSequenceIndex($sequence)
       ->setIsRecurring(true)
       ->attachParentEvent($this)
-      ->setAllDayDateFrom(0)
-      ->setAllDayDateTo(0)
-      ->setDateFrom(0)
-      ->setDateTo(0);
+      ->attachImportSource(null);
 
     return $child->copyFromParent($actor, $start);
   }
@@ -198,6 +166,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       'editPolicy' => true,
       'name' => true,
       'description' => true,
+      'isCancelled' => true,
     );
 
     // Read these fields from the parent event instead of this event. For
@@ -237,13 +206,13 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       ->setViewPolicy($parent->getViewPolicy())
       ->setEditPolicy($parent->getEditPolicy())
       ->setName($parent->getName())
-      ->setDescription($parent->getDescription());
-
-    $sequence = $this->getSequenceIndex();
+      ->setDescription($parent->getDescription())
+      ->setIsCancelled($parent->getIsCancelled());
 
     if ($start) {
       $start_datetime = $start;
     } else {
+      $sequence = $this->getSequenceIndex();
       $start_datetime = $parent->newSequenceIndexDateTime($sequence);
 
       if (!$start_datetime) {
@@ -261,6 +230,19 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       ->setStartDateTime($start_datetime)
       ->setEndDateTime($end_datetime);
 
+    if ($parent->isImportedEvent()) {
+      $full_uid = $parent->getImportUID().'/'.$start_datetime->getEpoch();
+
+      // NOTE: We don't attach the import source because this gets called
+      // from CalendarEventQuery while building ghosts, before we've loaded
+      // and attached sources. Possibly this sequence should be flipped.
+
+      $this
+        ->setImportAuthorPHID($parent->getImportAuthorPHID())
+        ->setImportSourcePHID($parent->getImportSourcePHID())
+        ->setImportUID($full_uid);
+    }
+
     return $this;
   }
 
@@ -274,10 +256,16 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       return null;
     }
 
+    $limit = $sequence + 1;
+    $count = $this->getRecurrenceCount();
+    if ($count && ($count < $limit)) {
+      return null;
+    }
+
     $instances = $set->getEventsBetween(
       null,
       $this->newUntilDateTime(),
-      $sequence + 1);
+      $limit);
 
     return idx($instances, $sequence, null);
   }
@@ -414,6 +402,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
         'icon' => 'text32',
         'mailKey' => 'bytes20',
         'isRecurring' => 'bool',
+        'seriesParentPHID' => 'phid?',
         'instanceOfEventPHID' => 'phid?',
         'sequenceIndex' => 'uint32?',
         'isStub' => 'bool',
@@ -425,18 +414,8 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
         'importSourcePHID' => 'phid?',
         'importUIDIndex' => 'bytes12?',
         'importUID' => 'text?',
-
-        // TODO: DEPRECATED.
-        'allDayDateFrom' => 'epoch',
-        'allDayDateTo' => 'epoch',
-        'dateFrom' => 'epoch',
-        'dateTo' => 'epoch',
-        'recurrenceEndDate' => 'epoch?',
       ),
       self::CONFIG_KEY_SCHEMA => array(
-        'key_date' => array(
-          'columns' => array('dateFrom', 'dateTo'),
-        ),
         'key_instance' => array(
           'columns' => array('instanceOfEventPHID', 'sequenceIndex'),
           'unique' => true,
@@ -448,9 +427,11 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
           'columns' => array('instanceOfEventPHID', 'utcInstanceEpoch'),
           'unique' => true,
         ),
+        'key_series' => array(
+          'columns' => array('seriesParentPHID', 'utcInitialEpoch'),
+        ),
       ),
       self::CONFIG_SERIALIZATION => array(
-        'recurrenceFrequency' => self::SERIALIZATION_JSON,
         'parameters' => self::SERIALIZATION_JSON,
       ),
     ) + parent::getConfiguration();
@@ -466,7 +447,55 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
   }
 
   public function getInvitees() {
+    if ($this->getIsGhostEvent() || $this->getIsStub()) {
+      if ($this->stubInvitees === null) {
+        $this->stubInvitees = $this->newStubInvitees();
+      }
+      return $this->stubInvitees;
+    }
+
     return $this->assertAttached($this->invitees);
+  }
+
+  public function getInviteeForPHID($phid) {
+    $invitees = $this->getInvitees();
+    $invitees = mpull($invitees, null, 'getInviteePHID');
+    return idx($invitees, $phid);
+  }
+
+  public static function getFrequencyMap() {
+    return array(
+      PhutilCalendarRecurrenceRule::FREQUENCY_DAILY => array(
+        'label' => pht('Daily'),
+      ),
+      PhutilCalendarRecurrenceRule::FREQUENCY_WEEKLY => array(
+        'label' => pht('Weekly'),
+      ),
+      PhutilCalendarRecurrenceRule::FREQUENCY_MONTHLY => array(
+        'label' => pht('Monthly'),
+      ),
+      PhutilCalendarRecurrenceRule::FREQUENCY_YEARLY => array(
+        'label' => pht('Yearly'),
+      ),
+    );
+  }
+
+  private function newStubInvitees() {
+    $parent = $this->getParentEvent();
+
+    $parent_invitees = $parent->getInvitees();
+    $stub_invitees = array();
+
+    foreach ($parent_invitees as $invitee) {
+      $stub_invitee = id(new PhabricatorCalendarEventInvitee())
+        ->setInviteePHID($invitee->getInviteePHID())
+        ->setInviterPHID($invitee->getInviterPHID())
+        ->setStatus(PhabricatorCalendarEventInvitee::STATUS_INVITED);
+
+      $stub_invitees[] = $stub_invitee;
+    }
+
+    return $stub_invitees;
   }
 
   public function attachInvitees(array $invitees) {
@@ -495,6 +524,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     if (!$invited) {
       return PhabricatorCalendarEventInvitee::STATUS_UNINVITED;
     }
+
     $invited = $invited->getStatus();
     return $invited;
   }
@@ -506,16 +536,6 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     $is_attending = ($old_status == $attending_status);
 
     return $is_attending;
-  }
-
-  public function getIsUserInvited($phid) {
-    $uninvited_status = PhabricatorCalendarEventInvitee::STATUS_UNINVITED;
-    $declined_status = PhabricatorCalendarEventInvitee::STATUS_DECLINED;
-    $status = $this->getUserInviteStatus($phid);
-    if ($status == $uninvited_status || $status == $declined_status) {
-      return false;
-    }
-    return true;
   }
 
   public function getIsGhostEvent() {
@@ -541,7 +561,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     return $this->assertAttached($this->parentEvent);
   }
 
-  public function attachParentEvent($event) {
+  public function attachParentEvent(PhabricatorCalendarEvent $event = null) {
     $this->parentEvent = $event;
     return $this;
   }
@@ -554,20 +574,6 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     return ($this->instanceOfEventPHID !== null);
   }
 
-  public function isCancelledEvent() {
-    if ($this->getIsCancelled()) {
-      return true;
-    }
-
-    if ($this->isChildEvent()) {
-      if ($this->getParentEvent()->getIsCancelled()) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   public function renderEventDate(
     PhabricatorUser $viewer,
     $show_end) {
@@ -575,10 +581,15 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     $start = $this->newStartDateTime();
     $end = $this->newEndDateTime();
 
-    if ($show_end) {
-      $min_date = $start->newPHPDateTime();
-      $max_date = $end->newPHPDateTime();
+    $min_date = $start->newPHPDateTime();
+    $max_date = $end->newPHPDateTime();
 
+    if ($this->getIsAllDay()) {
+      // Subtract one second since the stored date is exclusive.
+      $max_date = $max_date->modify('-1 second');
+    }
+
+    if ($show_end) {
       $min_day = $min_date->format('Y m d');
       $max_day = $max_date->format('Y m d');
 
@@ -587,8 +598,8 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       $show_end_date = false;
     }
 
-    $min_epoch = $start->getEpoch();
-    $max_epoch = $end->getEpoch();
+    $min_epoch = $min_date->format('U');
+    $max_epoch = $max_date->format('U');
 
     if ($this->getIsAllDay()) {
       if ($show_end_date) {
@@ -620,32 +631,50 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
 
 
   public function getDisplayIcon(PhabricatorUser $viewer) {
-    if ($this->isCancelledEvent()) {
+    if ($this->getIsCancelled()) {
       return 'fa-times';
     }
 
     if ($viewer->isLoggedIn()) {
-      $status = $this->getUserInviteStatus($viewer->getPHID());
-      switch ($status) {
-        case PhabricatorCalendarEventInvitee::STATUS_ATTENDING:
-          return 'fa-check-circle';
-        case PhabricatorCalendarEventInvitee::STATUS_INVITED:
-          return 'fa-user-plus';
-        case PhabricatorCalendarEventInvitee::STATUS_DECLINED:
-          return 'fa-times';
+      $viewer_phid = $viewer->getPHID();
+      if ($this->isRSVPInvited($viewer_phid)) {
+        return 'fa-users';
+      } else {
+        $status = $this->getUserInviteStatus($viewer_phid);
+        switch ($status) {
+          case PhabricatorCalendarEventInvitee::STATUS_ATTENDING:
+            return 'fa-check-circle';
+          case PhabricatorCalendarEventInvitee::STATUS_INVITED:
+            return 'fa-user-plus';
+          case PhabricatorCalendarEventInvitee::STATUS_DECLINED:
+            return 'fa-times-circle';
+        }
       }
+    }
+
+    if ($this->isImportedEvent()) {
+      return 'fa-download';
     }
 
     return $this->getIcon();
   }
 
   public function getDisplayIconColor(PhabricatorUser $viewer) {
-    if ($this->isCancelledEvent()) {
+    if ($this->getIsCancelled()) {
       return 'red';
     }
 
+    if ($this->isImportedEvent()) {
+      return 'orange';
+    }
+
     if ($viewer->isLoggedIn()) {
-      $status = $this->getUserInviteStatus($viewer->getPHID());
+      $viewer_phid = $viewer->getPHID();
+      if ($this->isRSVPInvited($viewer_phid)) {
+        return 'green';
+      }
+
+      $status = $this->getUserInviteStatus($viewer_phid);
       switch ($status) {
         case PhabricatorCalendarEventInvitee::STATUS_ATTENDING:
           return 'green';
@@ -660,7 +689,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
   }
 
   public function getDisplayIconLabel(PhabricatorUser $viewer) {
-    if ($this->isCancelledEvent()) {
+    if ($this->getIsCancelled()) {
       return pht('Cancelled');
     }
 
@@ -739,8 +768,18 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
 
     $host_handle = $handles[$host_phid];
     $host_name = $host_handle->getFullName();
-    $host_uri = $host_handle->getURI();
-    $host_uri = PhabricatorEnv::getURI($host_uri);
+
+    // NOTE: Gmail shows "Who: Unknown Organizer*" if the organizer URI does
+    // not look like an email address. Use a synthetic address so it shows
+    // the host name instead.
+    $install_uri = PhabricatorEnv::getProductionURI('/');
+    $install_uri = new PhutilURI($install_uri);
+
+    // This should possibly use "metamta.reply-handler-domain" instead, but
+    // we do not currently accept mail for users anyway, and that option may
+    // not be configured.
+    $mail_domain = $install_uri->getDomain();
+    $host_uri = "mailto:{$host_phid}@{$mail_domain}";
 
     $organizer = id(new PhutilCalendarUserNode())
       ->setName($host_name)
@@ -799,26 +838,39 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
 
   public function newStartDateTime() {
     $datetime = $this->getParameter('startDateTime');
-    if ($datetime) {
-      return $this->newDateTimeFromDictionary($datetime);
-    }
-
-    $epoch = $this->getDateFrom();
-    return $this->newDateTimeFromEpoch($epoch);
+    return $this->newDateTimeFromDictionary($datetime);
   }
 
   public function getStartDateTimeEpoch() {
     return $this->newStartDateTime()->getEpoch();
   }
 
-  public function newEndDateTime() {
+  public function newEndDateTimeForEdit() {
     $datetime = $this->getParameter('endDateTime');
-    if ($datetime) {
-      return $this->newDateTimeFromDictionary($datetime);
+    return $this->newDateTimeFromDictionary($datetime);
+  }
+
+  public function newEndDateTime() {
+    $datetime = $this->newEndDateTimeForEdit();
+
+    // If this is an all day event, we move the end date time forward to the
+    // first second of the following day. This is consistent with what users
+    // expect: an all day event from "Nov 1" to "Nov 1" lasts the entire day.
+
+    // For imported events, the end date is already stored with this
+    // adjustment.
+
+    if ($this->getIsAllDay() && !$this->isImportedEvent()) {
+      $datetime = $datetime
+        ->newAbsoluteDateTime()
+        ->setHour(0)
+        ->setMinute(0)
+        ->setSecond(0)
+        ->newRelativeDateTime('P1D')
+        ->newAbsoluteDateTime();
     }
 
-    $epoch = $this->getDateTo();
-    return $this->newDateTimeFromEpoch($epoch);
+    return $datetime;
   }
 
   public function getEndDateTimeEpoch() {
@@ -831,11 +883,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       return $this->newDateTimeFromDictionary($datetime);
     }
 
-    $epoch = $this->getRecurrenceEndDate();
-    if (!$epoch) {
-      return null;
-    }
-    return $this->newDateTimeFromEpoch($epoch);
+    return null;
   }
 
   public function getUntilDateTimeEpoch() {
@@ -911,10 +959,14 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       $datetime->newAbsoluteDateTime()->toDictionary());
   }
 
-  public function setUntilDateTime(PhutilCalendarDateTime $datetime) {
-    return $this->setParameter(
-      'untilDateTime',
-      $datetime->newAbsoluteDateTime()->toDictionary());
+  public function setUntilDateTime(PhutilCalendarDateTime $datetime = null) {
+    if ($datetime) {
+      $value = $datetime->newAbsoluteDateTime()->toDictionary();
+    } else {
+      $value = null;
+    }
+
+    return $this->setParameter('untilDateTime', $value);
   }
 
   public function setRecurrenceRule(PhutilCalendarRecurrenceRule $rrule) {
@@ -947,7 +999,22 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       $rrule->setUntil($until);
     }
 
+    $count = $this->getRecurrenceCount();
+    if ($count) {
+      $rrule->setCount($count);
+    }
+
     return $rrule;
+  }
+
+  public function getRecurrenceCount() {
+    $count = (int)$this->getParameter('recurrenceCount');
+
+    if (!$count) {
+      return null;
+    }
+
+    return $count;
   }
 
   public function newRecurrenceSet() {
@@ -967,6 +1034,10 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     return $set;
   }
 
+  public function isImportedEvent() {
+    return (bool)$this->getImportSourcePHID();
+  }
+
   public function getImportSource() {
     return $this->assertAttached($this->importSource);
   }
@@ -976,6 +1047,128 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     $this->importSource = $import;
     return $this;
   }
+
+  public function loadForkTarget(PhabricatorUser $viewer) {
+    if (!$this->getIsRecurring()) {
+      // Can't fork an event which isn't recurring.
+      return null;
+    }
+
+    if ($this->isChildEvent()) {
+      // If this is a child event, this is the fork target.
+      return $this;
+    }
+
+    if (!$this->isValidSequenceIndex($viewer, 1)) {
+      // This appears to be a "recurring" event with no valid instances: for
+      // example, its "until" date is before the second instance would occur.
+      // This can happen if we already forked the event or if users entered
+      // silly stuff. Just edit the event directly without forking anything.
+      return null;
+    }
+
+
+    $next_event = id(new PhabricatorCalendarEventQuery())
+      ->setViewer($viewer)
+      ->withInstanceSequencePairs(
+        array(
+          array($this->getPHID(), 1),
+        ))
+      ->requireCapabilities(
+        array(
+          PhabricatorPolicyCapability::CAN_VIEW,
+          PhabricatorPolicyCapability::CAN_EDIT,
+        ))
+      ->executeOne();
+
+    if (!$next_event) {
+      $next_event = $this->newStub($viewer, 1);
+    }
+
+    return $next_event;
+  }
+
+  public function loadFutureEvents(PhabricatorUser $viewer) {
+    // NOTE: If you can't edit some of the future events, we just
+    // don't try to update them. This seems like it's probably what
+    // users are likely to expect.
+
+    // NOTE: This only affects events that are currently in the same
+    // series, not all events that were ever in the original series.
+    // We could use series PHIDs instead of parent PHIDs to affect more
+    // events if this turns out to be counterintuitive. Other
+    // applications differ in their behavior.
+
+    return id(new PhabricatorCalendarEventQuery())
+      ->setViewer($viewer)
+      ->withParentEventPHIDs(array($this->getPHID()))
+      ->withUTCInitialEpochBetween($this->getUTCInitialEpoch(), null)
+      ->requireCapabilities(
+        array(
+          PhabricatorPolicyCapability::CAN_VIEW,
+          PhabricatorPolicyCapability::CAN_EDIT,
+        ))
+      ->execute();
+  }
+
+  public function getNotificationPHIDs() {
+    $phids = array();
+    if ($this->getPHID()) {
+      $phids[] = $this->getPHID();
+    }
+
+    if ($this->getSeriesParentPHID()) {
+      $phids[] = $this->getSeriesParentPHID();
+    }
+
+    return $phids;
+  }
+
+  public function getRSVPs($phid) {
+    return $this->assertAttachedKey($this->rsvps, $phid);
+  }
+
+  public function attachRSVPs(array $rsvps) {
+    $this->rsvps = $rsvps;
+    return $this;
+  }
+
+  public function isRSVPInvited($phid) {
+    $status_invited = PhabricatorCalendarEventInvitee::STATUS_INVITED;
+    return ($this->getRSVPStatus($phid) == $status_invited);
+  }
+
+  public function hasRSVPAuthority($phid, $other_phid) {
+    foreach ($this->getRSVPs($phid) as $rsvp) {
+      if ($rsvp->getInviteePHID() == $other_phid) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  public function getRSVPStatus($phid) {
+    // Check for an individual invitee record first.
+    $invitees = $this->invitees;
+    $invitees = mpull($invitees, null, 'getInviteePHID');
+    $invitee = idx($invitees, $phid);
+    if ($invitee) {
+      return $invitee->getStatus();
+    }
+
+    // If we don't have one, try to find an invited status for the user's
+    // projects.
+    $status_invited = PhabricatorCalendarEventInvitee::STATUS_INVITED;
+    foreach ($this->getRSVPs($phid) as $rsvp) {
+      if ($rsvp->getStatus() == $status_invited) {
+        return $status_invited;
+      }
+    }
+
+    return PhabricatorCalendarEventInvitee::STATUS_UNINVITED;
+  }
+
 
 
 /* -(  Markup Interface  )--------------------------------------------------- */
@@ -1040,7 +1233,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
       case PhabricatorPolicyCapability::CAN_VIEW:
         return $this->getViewPolicy();
       case PhabricatorPolicyCapability::CAN_EDIT:
-        if ($this->getImportSource()) {
+        if ($this->isImportedEvent()) {
           return PhabricatorPolicies::POLICY_NOONE;
         } else {
           return $this->getEditPolicy();
@@ -1049,7 +1242,7 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
   }
 
   public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
-    if ($this->getImportSource()) {
+    if ($this->isImportedEvent()) {
       return false;
     }
 
@@ -1074,18 +1267,6 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     return false;
   }
 
-  public function describeAutomaticCapability($capability) {
-    if ($this->getImportSource()) {
-      return pht(
-        'Events imported from external sources can not be edited in '.
-        'Phabricator.');
-    }
-
-    return pht(
-      'The host of an event can always view and edit it. Users who are '.
-      'invited to an event can always view it.');
-  }
-
 
 /* -(  PhabricatorExtendedPolicyInterface  )--------------------------------- */
 
@@ -1106,6 +1287,12 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     }
 
     return $extended;
+  }
+
+/* -(  PhabricatorPolicyCodexInterface  )------------------------------------ */
+
+  public function newPolicyCodex() {
+    return new PhabricatorCalendarEventPolicyCodex();
   }
 
 

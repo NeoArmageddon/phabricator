@@ -13,6 +13,10 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
   private $parameters = array();
   private $functionStack = array();
   private $isBrowse;
+  private $phase = self::PHASE_CONTENT;
+
+  const PHASE_PREFIX = 'prefix';
+  const PHASE_CONTENT = 'content';
 
   public function setLimit($limit) {
     $this->limit = $limit;
@@ -44,6 +48,10 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
   public function setRawQuery($raw_query) {
     $this->rawQuery = $raw_query;
     return $this;
+  }
+
+  public function getPrefixQuery() {
+    return phutil_utf8_strtolower($this->getRawQuery());
   }
 
   public function getRawQuery() {
@@ -81,6 +89,15 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
     return $this->isBrowse;
   }
 
+  public function setPhase($phase) {
+    $this->phase = $phase;
+    return $this;
+  }
+
+  public function getPhase() {
+    return $this->phase;
+  }
+
   public function getDatasourceURI() {
     $uri = new PhutilURI('/typeahead/class/'.get_class($this).'/');
     $uri->setQueryParams($this->parameters);
@@ -106,6 +123,13 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
   abstract public function getDatasourceApplicationClass();
   abstract public function loadResults();
 
+  protected function loadResultsForPhase($phase, $limit) {
+    // By default, sources just load all of their results in every phase and
+    // rely on filtering at a higher level to sequence phases correctly.
+    $this->setLimit($limit);
+    return $this->loadResults();
+  }
+
   protected function didLoadResults(array $results) {
     return $results;
   }
@@ -117,8 +141,18 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
       return array();
     }
 
-    $tokens = preg_split('/\s+|[-\[\]]/u', $string);
-    return array_unique($tokens);
+    $tokens = preg_split('/[\s\[\]-]+/u', $string);
+    $tokens = array_unique($tokens);
+
+    // Make sure we don't return the empty token, as this will boil down to a
+    // JOIN against every token.
+    foreach ($tokens as $key => $value) {
+      if (!strlen($value)) {
+        unset($tokens[$key]);
+      }
+    }
+
+    return array_values($tokens);
   }
 
   public function getTokens() {

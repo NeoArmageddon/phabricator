@@ -14,6 +14,12 @@ final class PhabricatorCalendarImport
   protected $engineType;
   protected $parameters = array();
   protected $isDisabled = 0;
+  protected $triggerPHID;
+  protected $triggerFrequency;
+
+  const FREQUENCY_ONCE = 'once';
+  const FREQUENCY_HOURLY = 'hourly';
+  const FREQUENCY_DAILY = 'daily';
 
   private $engine = self::ATTACHABLE;
 
@@ -21,12 +27,14 @@ final class PhabricatorCalendarImport
     PhabricatorUser $actor,
     PhabricatorCalendarImportEngine $engine) {
     return id(new self())
+      ->setName('')
       ->setAuthorPHID($actor->getPHID())
       ->setViewPolicy($actor->getPHID())
       ->setEditPolicy($actor->getPHID())
       ->setIsDisabled(0)
       ->setEngineType($engine->getImportEngineType())
-      ->attachEngine($engine);
+      ->attachEngine($engine)
+      ->setTriggerFrequency(self::FREQUENCY_ONCE);
   }
 
   protected function getConfiguration() {
@@ -39,6 +47,8 @@ final class PhabricatorCalendarImport
         'name' => 'text',
         'engineType' => 'text64',
         'isDisabled' => 'bool',
+        'triggerPHID' => 'phid?',
+        'triggerFrequency' => 'text64',
       ),
       self::CONFIG_KEY_SCHEMA => array(
         'key_author' => array(
@@ -84,6 +94,21 @@ final class PhabricatorCalendarImport
     return $this->getEngine()->getDisplayName($this);
   }
 
+  public static function getTriggerFrequencyMap() {
+    return array(
+      self::FREQUENCY_ONCE => array(
+        'name' => pht('No Automatic Updates'),
+      ),
+      self::FREQUENCY_HOURLY => array(
+        'name' => pht('Update Hourly'),
+      ),
+      self::FREQUENCY_DAILY => array(
+        'name' => pht('Update Daily'),
+      ),
+    );
+  }
+
+
 /* -(  PhabricatorPolicyInterface  )----------------------------------------- */
 
 
@@ -105,10 +130,6 @@ final class PhabricatorCalendarImport
 
   public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
     return false;
-  }
-
-  public function describeAutomaticCapability($capability) {
-    return null;
   }
 
 
@@ -133,6 +154,17 @@ final class PhabricatorCalendarImport
     return $timeline;
   }
 
+  public function newLogMessage($type, array $parameters) {
+    $parameters = array(
+      'type' => $type,
+    ) + $parameters;
+
+    return id(new PhabricatorCalendarImportLog())
+      ->setImportPHID($this->getPHID())
+      ->setParameters($parameters)
+      ->save();
+  }
+
 
 /* -(  PhabricatorDestructibleInterface  )----------------------------------- */
 
@@ -143,11 +175,31 @@ final class PhabricatorCalendarImport
 
     $this->openTransaction();
 
+      $trigger_phid = $this->getTriggerPHID();
+      if ($trigger_phid) {
+        $trigger = id(new PhabricatorWorkerTriggerQuery())
+          ->setViewer($viewer)
+          ->withPHIDs(array($trigger_phid))
+          ->executeOne();
+        if ($trigger) {
+          $engine->destroyObject($trigger);
+        }
+      }
+
       $events = id(new PhabricatorCalendarEventQuery())
+        ->setViewer($viewer)
         ->withImportSourcePHIDs(array($this->getPHID()))
         ->execute();
       foreach ($events as $event) {
         $engine->destroyObject($event);
+      }
+
+      $logs = id(new PhabricatorCalendarImportLogQuery())
+        ->setViewer($viewer)
+        ->withImportPHIDs(array($this->getPHID()))
+        ->execute();
+      foreach ($logs as $log) {
+        $engine->destroyObject($log);
       }
 
       $this->delete();

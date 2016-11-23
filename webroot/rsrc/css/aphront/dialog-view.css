@@ -108,6 +108,20 @@
   opacity: 0.95;
 }
 
+.jx-white-mask {
+  background: #fff;
+  opacity: 1;
+}
+
+.jx-date-mask {
+  background: #292f33;
+  opacity: 0.5;
+}
+
+.device-desktop .jx-date-mask {
+  display: none;
+}
+
 .aphront-exception-dialog {
   width: 95%;
 }
@@ -126,6 +140,10 @@
 
 .aphront-access-dialog {
   width: 50%;
+}
+
+.aphront-policy-explain-dialog .aphront-dialog-body {
+  padding: 0 12px;
 }
 
 .aphront-policy-rejection {
@@ -163,5 +181,9 @@
 }
 
 .aphront-dialog-object-list .aphront-dialog-body {
+  padding: 0 12px;
+}
+
+.aphront-dialog-tab-group .aphront-dialog-body {
   padding: 0 12px;
 }

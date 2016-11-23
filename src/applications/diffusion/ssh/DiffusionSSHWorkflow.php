@@ -30,10 +30,8 @@ abstract class DiffusionSSHWorkflow extends PhabricatorSSHWorkflow {
       DiffusionCommitHookEngine::ENV_REMOTE_PROTOCOL => 'ssh',
     );
 
-    $ssh_client = getenv('SSH_CLIENT');
-    if ($ssh_client) {
-      // This has the format "<ip> <remote-port> <local-port>". Grab the IP.
-      $remote_address = head(explode(' ', $ssh_client));
+    $remote_address = $this->getSSHRemoteAddress();
+    if ($remote_address !== null) {
       $env[DiffusionCommitHookEngine::ENV_REMOTE_ADDRESS] = $remote_address;
     }
 
@@ -163,18 +161,19 @@ abstract class DiffusionSSHWorkflow extends PhabricatorSSHWorkflow {
     }
   }
 
-  protected function loadRepositoryWithPath($path) {
+  protected function loadRepositoryWithPath($path, $vcs) {
     $viewer = $this->getUser();
 
-    $info = PhabricatorRepository::parseRepositoryServicePath($path);
+    $info = PhabricatorRepository::parseRepositoryServicePath($path, $vcs);
     if ($info === null) {
       throw new Exception(
         pht(
-          'Unrecognized repository path "%s". Expected a path like "%s" '.
-          'or "%s".',
+          'Unrecognized repository path "%s". Expected a path like "%s", '.
+          '"%s", or "%s".',
           $path,
           '/diffusion/X/',
-          '/diffusion/123/'));
+          '/diffusion/123/',
+          '/source/thaumaturgy.git'));
     }
 
     $identifier = $info['identifier'];
@@ -259,5 +258,17 @@ abstract class DiffusionSSHWorkflow extends PhabricatorSSHWorkflow {
     return false;
   }
 
+  protected function newPullEvent() {
+    $viewer = $this->getViewer();
+    $repository = $this->getRepository();
+    $remote_address = $this->getSSHRemoteAddress();
+
+    return id(new PhabricatorRepositoryPullEvent())
+      ->setEpoch(PhabricatorTime::getNow())
+      ->setRemoteAddress($remote_address)
+      ->setRemoteProtocol('ssh')
+      ->setPullerPHID($viewer->getPHID())
+      ->setRepositoryPHID($repository->getPHID());
+  }
 
 }
