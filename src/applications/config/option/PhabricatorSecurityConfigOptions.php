@@ -23,8 +23,8 @@ final class PhabricatorSecurityConfigOptions
     $doc_href = PhabricatorEnv::getDoclink('Configuring a File Domain');
     $doc_name = pht('Configuration Guide: Configuring a File Domain');
 
-    // This is all of the IANA special/reserved blocks in IPv4 space.
     $default_address_blacklist = array(
+      // This is all of the IANA special/reserved blocks in IPv4 space.
       '0.0.0.0/8',
       '10.0.0.0/8',
       '100.64.0.0/10',
@@ -41,6 +41,21 @@ final class PhabricatorSecurityConfigOptions
       '224.0.0.0/4',
       '240.0.0.0/4',
       '255.255.255.255/32',
+
+      // And these are the IANA special/reserved blocks in IPv6 space.
+      '::/128',
+      '::1/128',
+      '::ffff:0:0/96',
+      '100::/64',
+      '64:ff9b::/96',
+      '2001::/32',
+      '2001:10::/28',
+      '2001:20::/28',
+      '2001:db8::/32',
+      '2002::/16',
+      'fc00::/7',
+      'fe80::/10',
+      'ff00::/8',
     );
 
     $keyring_type = 'custom:PhabricatorKeyringConfigOptionType';
@@ -50,6 +65,21 @@ and encryption, see **[[ %s | Configuring Encryption ]]**.
 EOTEXT
       ,
       PhabricatorEnv::getDoclink('Configuring Encryption')));
+
+    $require_mfa_description = $this->deformat(pht(<<<EOTEXT
+By default, Phabricator allows users to add multi-factor authentication to
+their accounts, but does not require it. By enabling this option, you can
+force all users to add at least one authentication factor before they can use
+their accounts.
+
+Administrators can query a list of users who do not have MFA configured in
+{nav People}:
+
+  - **[[ %s | %s ]]**
+EOTEXT
+      ,
+      '/people/?mfa=false',
+      pht('List of Users Without MFA')));
 
     return array(
       $this->newOption('security.alternate-file-domain', 'string', null)
@@ -79,7 +109,8 @@ EOTEXT
             'Default key for HMAC digests where the key is not important '.
             '(i.e., the hash itself is secret). You can change this if you '.
             'want (to any other string), but doing so will break existing '.
-            'sessions and CSRF tokens.')),
+            'sessions and CSRF tokens. This option is deprecated. Newer '.
+            'code automatically manages HMAC keys.')),
       $this->newOption('security.require-https', 'bool', false)
         ->setLocked(true)
         ->setSummary(
@@ -117,13 +148,7 @@ EOTEXT
         ->setLocked(true)
         ->setSummary(
           pht('Require all users to configure multi-factor authentication.'))
-        ->setDescription(
-          pht(
-            'By default, Phabricator allows users to add multi-factor '.
-            'authentication to their accounts, but does not require it. '.
-            'By enabling this option, you can force all users to add '.
-            'at least one authentication factor before they can use their '.
-            'accounts.'))
+        ->setDescription($require_mfa_description)
         ->setBoolOptions(
           array(
             pht('Multi-Factor Required'),

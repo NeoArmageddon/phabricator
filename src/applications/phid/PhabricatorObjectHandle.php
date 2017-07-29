@@ -6,6 +6,7 @@ final class PhabricatorObjectHandle
 
   const AVAILABILITY_FULL = 'full';
   const AVAILABILITY_NONE = 'none';
+  const AVAILABILITY_NOEMAIL = 'no-email';
   const AVAILABILITY_PARTIAL = 'partial';
   const AVAILABILITY_DISABLED = 'disabled';
 
@@ -30,6 +31,10 @@ final class PhabricatorObjectHandle
   private $subtitle;
   private $tokenIcon;
   private $commandLineObjectName;
+
+  private $stateIcon;
+  private $stateColor;
+  private $stateName;
 
   public function setIcon($icon) {
     $this->icon = $icon;
@@ -284,6 +289,54 @@ final class PhabricatorObjectHandle
     return $this->complete;
   }
 
+  public function setStateIcon($state_icon) {
+    $this->stateIcon = $state_icon;
+    return $this;
+  }
+
+  public function getStateIcon() {
+    return $this->stateIcon;
+  }
+
+  public function setStateColor($state_color) {
+    $this->stateColor = $state_color;
+    return $this;
+  }
+
+  public function getStateColor() {
+    return $this->stateColor;
+  }
+
+  public function setStateName($state_name) {
+    $this->stateName = $state_name;
+    return $this;
+  }
+
+  public function getStateName() {
+    return $this->stateName;
+  }
+
+  public function renderStateIcon() {
+    $icon = $this->getStateIcon();
+    if ($icon === null) {
+      $icon = 'fa-question-circle-o';
+    }
+
+    $color = $this->getStateColor();
+
+    $name = $this->getStateName();
+    if ($name === null) {
+      $name = pht('Unknown');
+    }
+
+    return id(new PHUIIconView())
+      ->setIcon($icon, $color)
+      ->addSigil('has-tooltip')
+      ->setMetadata(
+        array(
+          'tip' => $name,
+        ));
+  }
 
   public function renderLink($name = null) {
     return $this->renderLinkWithAttributes($name, array());
@@ -354,8 +407,8 @@ final class PhabricatorObjectHandle
 
   public function renderTag() {
     return id(new PHUITagView())
-      ->setType(PHUITagView::TYPE_OBJECT)
-      ->setShade($this->getTagColor())
+      ->setType(PHUITagView::TYPE_SHADE)
+      ->setColor($this->getTagColor())
       ->setIcon($this->getIcon())
       ->setHref($this->getURI())
       ->setName($this->getLinkName());

@@ -18,6 +18,7 @@ final class PHUIObjectBoxView extends AphrontTagView {
   private $table;
   private $collapsed = false;
   private $anchor;
+  private $pager;
 
   private $showAction;
   private $hideAction;
@@ -123,6 +124,11 @@ final class PHUIObjectBoxView extends AphrontTagView {
 
   public function setCollapsed($collapsed) {
     $this->collapsed = $collapsed;
+    return $this;
+  }
+
+  public function setPager(PHUIPagerView $pager) {
+    $this->pager = $pager;
     return $this;
   }
 
@@ -294,6 +300,12 @@ final class PHUIObjectBoxView extends AphrontTagView {
       $lists = null;
     }
 
+    $pager = null;
+    if ($this->pager) {
+      if ($this->pager->willShowPagingControls()) {
+        $pager = phutil_tag_div('phui-object-box-pager', $this->pager);
+      }
+    }
 
     $content = array(
       ($this->showHideOpen == false ? $this->anchor : null),
@@ -308,6 +320,7 @@ final class PHUIObjectBoxView extends AphrontTagView {
       ($this->showHideOpen == true ? $this->anchor : null),
       $lists,
       $this->table,
+      $pager,
       $this->renderChildren(),
     );
 

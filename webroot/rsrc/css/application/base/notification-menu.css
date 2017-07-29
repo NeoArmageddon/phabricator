@@ -3,12 +3,12 @@
  */
 
 .phabricator-notification-menu {
-  background: #fff;
+  background: {$page.content};
   font-size: {$smallestfontsize};
   word-wrap: break-word;
   overflow-y: auto;
   box-shadow: {$dropshadow};
-  border: 1px solid {$blueborder};
+  border: 1px solid {$lightgreyborder};
   border-radius: 3px;
 }
 
@@ -65,7 +65,7 @@
 }
 
 .phabricator-notification + .phabricator-notification {
-  border-top: 1px solid {$hoverborder};
+  border-top: 1px solid {$thinblueborder};
 }
 
 .no-notifications {

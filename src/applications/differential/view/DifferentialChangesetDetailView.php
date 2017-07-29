@@ -110,67 +110,6 @@ final class DifferentialChangesetDetailView extends AphrontView {
     return $this->vsChangesetID;
   }
 
-  public function getFileIcon($filename) {
-    $path_info = pathinfo($filename);
-    $extension = idx($path_info, 'extension');
-    switch ($extension) {
-      case 'psd':
-      case 'ai':
-        $icon = 'fa-eye';
-        break;
-      case 'conf':
-        $icon = 'fa-wrench';
-        break;
-      case 'wav':
-      case 'mp3':
-      case 'aiff':
-        $icon = 'fa-file-sound-o';
-        break;
-      case 'm4v':
-      case 'mov':
-        $icon = 'fa-file-movie-o';
-        break;
-      case 'sql':
-      case 'db':
-        $icon = 'fa-database';
-        break;
-      case 'xls':
-      case 'csv':
-        $icon = 'fa-file-excel-o';
-        break;
-      case 'ics':
-        $icon = 'fa-calendar';
-        break;
-      case 'zip':
-      case 'tar':
-      case 'bz':
-      case 'tgz':
-      case 'gz':
-        $icon = 'fa-file-archive-o';
-        break;
-      case 'png':
-      case 'jpg':
-      case 'bmp':
-      case 'gif':
-        $icon = 'fa-file-picture-o';
-        break;
-      case 'txt':
-        $icon = 'fa-file-text-o';
-        break;
-      case 'doc':
-      case 'docx':
-        $icon = 'fa-file-word-o';
-        break;
-      case 'pdf':
-        $icon = 'fa-file-pdf-o';
-        break;
-      default:
-        $icon = 'fa-file-code-o';
-        break;
-    }
-    return $icon;
-  }
-
   public function render() {
     $this->requireResource('differential-changeset-view-css');
     $this->requireResource('syntax-highlighting-css');
@@ -204,22 +143,58 @@ final class DifferentialChangesetDetailView extends AphrontView {
     }
 
     $display_filename = $changeset->getDisplayFilename();
-    $display_icon = $this->getFileIcon($display_filename);
+    $display_icon = FileTypeIcon::getFileIcon($display_filename);
     $icon = id(new PHUIIconView())
       ->setIcon($display_icon);
 
     $renderer = DifferentialChangesetHTMLRenderer::getHTMLRendererByKey(
       $this->getRenderer());
 
+    $changeset_id = $this->changeset->getID();
+
+    $vs_id = $this->getVsChangesetID();
+    if (!$vs_id) {
+      // Showing a changeset normally.
+      $left_id = $changeset_id;
+      $right_id = $changeset_id;
+    } else if ($vs_id == -1) {
+      // Showing a synthetic "deleted" changeset for a file which was
+      // removed between changes.
+      $left_id = $changeset_id;
+      $right_id = null;
+    } else {
+      // Showing a diff-of-diffs.
+      $left_id = $vs_id;
+      $right_id = $changeset_id;
+    }
+
+    // In the persistent banner, emphasize the current filename.
+    $path_part = dirname($display_filename);
+    $file_part = basename($display_filename);
+    $display_parts = array();
+    if (strlen($path_part)) {
+      $path_part = $path_part.'/';
+      $display_parts[] = phutil_tag(
+        'span',
+        array(
+          'class' => 'diff-banner-path',
+        ),
+        $path_part);
+    }
+    $display_parts[] = phutil_tag(
+      'span',
+      array(
+        'class' => 'diff-banner-file',
+      ),
+      $file_part);
+
     return javelin_tag(
       'div',
       array(
         'sigil' => 'differential-changeset',
         'meta'  => array(
-          'left'  => nonempty(
-            $this->getVsChangesetID(),
-            $this->changeset->getID()),
-          'right' => $this->changeset->getID(),
+          'left'  => $left_id,
+          'right' => $right_id,
           'renderURI' => $this->getRenderURI(),
           'whitespace' => $this->getWhitespace(),
           'highlight' => null,
@@ -227,7 +202,9 @@ final class DifferentialChangesetDetailView extends AphrontView {
           'ref' => $this->getRenderingRef(),
           'autoload' => $this->getAutoload(),
           'loaded' => $this->getLoaded(),
-          'undoTemplates' => $renderer->renderUndoTemplates(),
+          'undoTemplates' => hsprintf('%s', $renderer->renderUndoTemplates()),
+          'displayPath' => hsprintf('%s', $display_parts),
+          'icon' => $display_icon,
         ),
         'class' => $class,
         'id'    => $id,

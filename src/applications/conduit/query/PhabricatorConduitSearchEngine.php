@@ -11,6 +11,10 @@ final class PhabricatorConduitSearchEngine
     return 'PhabricatorConduitApplication';
   }
 
+  public function canUseInPanelContext() {
+    return false;
+  }
+
   public function getPageSize(PhabricatorSavedQuery $saved) {
     return PHP_INT_MAX - 1;
   }
@@ -165,6 +169,10 @@ final class PhabricatorConduitSearchEngine
         case ConduitAPIMethod::METHOD_STATUS_DEPRECATED:
           $item->addIcon('fa-warning', pht('Deprecated'));
           $item->setStatusIcon('fa-warning red');
+          break;
+        case ConduitAPIMethod::METHOD_STATUS_FROZEN:
+          $item->addIcon('fa-archive', pht('Frozen'));
+          $item->setStatusIcon('fa-archive grey');
           break;
       }
 

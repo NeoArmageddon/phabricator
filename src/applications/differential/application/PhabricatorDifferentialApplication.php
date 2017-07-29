@@ -41,12 +41,6 @@ final class PhabricatorDifferentialApplication extends PhabricatorApplication {
     return "\xE2\x9A\x99";
   }
 
-  public function getEventListeners() {
-    return array(
-      new DifferentialLandingActionMenuEventListener(),
-    );
-  }
-
   public function getOverview() {
     return pht(
       'Differential is a **code review application** which allows '.
@@ -65,16 +59,18 @@ final class PhabricatorDifferentialApplication extends PhabricatorApplication {
         ),
         'changeset/' => 'DifferentialChangesetViewController',
         'revision/' => array(
-          'edit/(?:(?P<id>[1-9]\d*)/)?'
+          $this->getEditRoutePattern('edit/')
             => 'DifferentialRevisionEditController',
-          'land/(?:(?P<id>[1-9]\d*))/(?P<strategy>[^/]+)/'
-            => 'DifferentialRevisionLandController',
+          $this->getEditRoutePattern('attach/(?P<diffID>[^/]+)/to/')
+            => 'DifferentialRevisionEditController',
           'closedetails/(?P<phid>[^/]+)/'
             => 'DifferentialRevisionCloseDetailsController',
           'update/(?P<revisionID>[1-9]\d*)/'
             => 'DifferentialDiffCreateController',
           'operation/(?P<id>[1-9]\d*)/'
             => 'DifferentialRevisionOperationController',
+          'inlines/(?P<id>[1-9]\d*)/'
+            => 'DifferentialRevisionInlinesController',
         ),
         'comment/' => array(
           'preview/(?P<id>[1-9]\d*)/' => 'DifferentialCommentPreviewController',
@@ -99,82 +95,6 @@ final class PhabricatorDifferentialApplication extends PhabricatorApplication {
     return array(
       new DifferentialRemarkupRule(),
     );
-  }
-
-  public static function loadNeedAttentionRevisions(PhabricatorUser $viewer) {
-    if (!$viewer->isLoggedIn()) {
-      return array();
-    }
-
-    $viewer_phid = $viewer->getPHID();
-
-    $responsible_phids = id(new DifferentialResponsibleDatasource())
-      ->setViewer($viewer)
-      ->evaluateTokens(array($viewer_phid));
-
-    $revision_query = id(new DifferentialRevisionQuery())
-      ->setViewer($viewer)
-      ->withStatus(DifferentialRevisionQuery::STATUS_OPEN)
-      ->withResponsibleUsers($responsible_phids)
-      ->needReviewerStatus(true)
-      ->needRelationships(true)
-      ->needFlags(true)
-      ->needDrafts(true)
-      ->setLimit(self::MAX_STATUS_ITEMS);
-
-    $revisions = $revision_query->execute();
-
-    $query = id(new PhabricatorSavedQuery())
-      ->attachParameterMap(
-        array(
-          'responsiblePHIDs' => $responsible_phids,
-        ));
-
-    $groups = id(new DifferentialRevisionRequiredActionResultBucket())
-      ->setViewer($viewer)
-      ->newResultGroups($query, $revisions);
-
-    $include = array();
-    foreach ($groups as $group) {
-      switch ($group->getKey()) {
-        case DifferentialRevisionRequiredActionResultBucket::KEY_MUSTREVIEW:
-        case DifferentialRevisionRequiredActionResultBucket::KEY_SHOULDREVIEW:
-          foreach ($group->getObjects() as $object) {
-            $include[] = $object;
-          }
-          break;
-        default:
-          break;
-      }
-    }
-
-    return $include;
-  }
-
-  public function loadStatus(PhabricatorUser $user) {
-    $revisions = self::loadNeedAttentionRevisions($user);
-    $limit = self::MAX_STATUS_ITEMS;
-
-    if (count($revisions) >= $limit) {
-      $display_count = ($limit - 1);
-      $display_label = pht(
-        '%s+ Active Review(s)',
-        new PhutilNumber($display_count));
-    } else {
-      $display_count = count($revisions);
-      $display_label = pht(
-        '%s Review(s) Need Attention',
-        new PhutilNumber($display_count));
-    }
-
-    $status = array();
-
-    $status[] = id(new PhabricatorApplicationStatusView())
-      ->setType(PhabricatorApplicationStatusView::TYPE_WARNING)
-      ->setText($display_label)
-      ->setCount($display_count);
-
-    return $status;
   }
 
   public function supportsEmailIntegration() {

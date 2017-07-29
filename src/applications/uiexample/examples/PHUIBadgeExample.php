@@ -10,6 +10,10 @@ final class PHUIBadgeExample extends PhabricatorUIExample {
     return pht('Celebrate the moments of your life.');
   }
 
+  public function getCategory() {
+    return pht('Single Use');
+  }
+
   public function renderExample() {
 
     $badges1 = array();
@@ -97,7 +101,7 @@ final class PHUIBadgeExample extends PhabricatorUIExample {
 
     $badges2[] = id(new PHUIBadgeView())
       ->setIcon('fa-user')
-      ->setHeader(pht('Adminstrator'))
+      ->setHeader(pht('Administrator'))
       ->setSubhead(pht('Drew the short stick'))
       ->setQuality(PhabricatorBadgesQuality::LEGENDARY)
       ->setSource(pht('People (automatic)'))

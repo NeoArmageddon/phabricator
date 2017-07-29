@@ -93,6 +93,10 @@ body .phui-header-shell.phui-bleed-header
   color: {$darkbluetext};
 }
 
+.phui-box-blue-property .phui-header-view .phui-header-header a {
+  color: {$bluetext};
+}
+
 .device-desktop .phui-header-view .phui-header-header a:hover {
   text-decoration: none;
   color: {$blue};
@@ -303,14 +307,6 @@ body .phui-header-shell.phui-bleed-header
   text-decoration: underline;
 }
 
-.phui-header-subheader .phui-badge-flex-view {
-  display: inline;
-  margin-right: 4px;
-}
-
-.phui-header-subheader .phui-badge-flex-view:after {
-  display: inline;
-}
 
 /*** Profile Header ***********************************************************/
 
@@ -341,16 +337,15 @@ body .phui-header-shell.phui-bleed-header
 }
 
 .phui-profile-header.phui-header-shell .phui-header-header {
-  font-family: 'Aleo', {$fontfamily};
   font-size: 24px;
-  color: #000;
+  color: {$blacktext};
 }
 
 .phui-profile-header .phui-header-col3 {
   vertical-align: top;
 }
 
-.phui-header-view .phui-tag-shade-indigo a {
+.phui-header-view .phui-tag-indigo a {
   color: {$sh-indigotext};
 }
 

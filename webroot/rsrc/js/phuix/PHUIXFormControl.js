@@ -47,6 +47,12 @@ JX.install('PHUIXFormControl', {
         case 'optgroups':
           input = this._newOptgroups(spec);
           break;
+        case 'static':
+          input = this._newStatic(spec);
+          break;
+        case 'checkboxes':
+          input = this._newCheckboxes(spec);
+          break;
         default:
           // TODO: Default or better error?
           JX.$E('Bad Input Type');
@@ -169,6 +175,108 @@ JX.install('PHUIXFormControl', {
         set: function(value) {
           node.value = value;
         }
+      };
+    },
+
+    _newStatic: function(spec) {
+      var node = JX.$N(
+        'div',
+        {
+          className: 'phui-form-static-action'
+        },
+        spec.description || '');
+
+      return {
+        node: node,
+        get: function() {
+          return true;
+        },
+        set: function() {
+          return;
+        }
+      };
+    },
+
+    _newCheckboxes: function(spec) {
+      var checkboxes = [];
+      var checkbox_list = [];
+      for (var ii = 0; ii < spec.keys.length; ii++) {
+        var key = spec.keys[ii];
+        var checkbox_id = 'checkbox-' + Math.floor(Math.random() * 1000000);
+
+        var checkbox = JX.$N(
+          'input',
+          {
+            type: 'checkbox',
+            value: key,
+            id: checkbox_id
+          });
+
+        checkboxes.push(checkbox);
+
+        var label = JX.$N(
+          'label',
+          {
+            className: 'phuix-form-checkbox-label',
+            htmlFor: checkbox_id
+          },
+          JX.$H(spec.labels[key] || ''));
+
+        var display = JX.$N(
+          'div',
+          {
+            className: 'phuix-form-checkbox-item'
+          },
+          [checkbox, label]);
+
+        checkbox_list.push(display);
+      }
+
+      var node = JX.$N(
+        'div',
+        {
+          className: 'phuix-form-checkbox-action'
+        },
+        checkbox_list);
+
+      var get_value = function() {
+        var list = [];
+        for (var ii = 0; ii < checkboxes.length; ii++) {
+          if (checkboxes[ii].checked) {
+            list.push(checkboxes[ii].value);
+          }
+        }
+        return list;
+      };
+
+      var set_value = function(value) {
+        value = value || [];
+
+        if (!value.length) {
+          value = [];
+        }
+
+        var map = {};
+        var ii;
+        for (ii = 0; ii < value.length; ii++) {
+          map[value[ii]] = true;
+        }
+
+        for (ii = 0; ii < checkboxes.length; ii++) {
+          if (map.hasOwnProperty(checkboxes[ii].value)) {
+            checkboxes[ii].checked = 'checked';
+          } else {
+            checkboxes[ii].checked = false;
+          }
+        }
+      };
+
+      set_value(spec.value);
+
+      return {
+        node: node,
+        get: get_value,
+        set: set_value
       };
     },
 

@@ -48,6 +48,10 @@
 .phui-crumb-view {
   float: left;
   padding: 8px 0;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .device-phone .phui-crumb-view.phabricator-last-crumb .phui-crumb-name,
@@ -119,7 +123,7 @@ body .phui-crumbs-view + .phui-object-box {
   margin-top: 0;
 }
 
-body .phui-crumbs-view + .phui-object-item-list-view {
+body .phui-crumbs-view + .phui-oi-list-view {
   padding-top: 0;
 }
 

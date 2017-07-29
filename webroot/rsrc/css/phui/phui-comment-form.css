@@ -3,7 +3,7 @@
  */
 
 body .phui-box.phui-object-box.phui-comment-form-view {
-  background-color: #fff;
+  background-color: {$page.content};
   margin-left: 62px;
   position: relative;
 }
@@ -62,12 +62,12 @@ body.device .phui-box.phui-object-box.phui-comment-form-view {
   border-color: {$lightblueborder};
   border-top: 1px solid {$thinblueborder};
   padding: 8px;
-  height: 10em;
+  height: 12em;
   background-color: rgba({$alphablue},.02);
 }
 
 .phui-comment-form-view .aphront-form-input .remarkup-assist-textarea:focus {
-  background-color: #fff;
+  background-color: {$page.content};
 }
 
 .device-phone .phui-comment-form-view .aphront-form-input
@@ -90,7 +90,7 @@ body.device .phui-box.phui-object-box.phui-comment-form-view {
 }
 
 .phui-comment-action {
-  background-color: rgba(239, 243, 252, .75);
+  background-color: rgba({$alphablue}, .1);
   border-radius: 3px;
   margin: 0px 16px 8px;
   padding: 6px;
@@ -106,8 +106,8 @@ body.device .phui-box.phui-object-box.phui-comment-form-view {
 
 .phui-comment-form-view .phui-comment-action-bar {
   border-bottom: 1px solid {$thinblueborder};
-  background-color: rgba(239, 243, 252, .75);
-  padding: 2px 12px 4px 12px;
+  background-color: {$bluepropertybackground};
+  padding: 4px 12px 4px 12px;
   margin-bottom: 16px;
 }
 
@@ -155,11 +155,19 @@ body.device .phui-box.phui-object-box.phui-comment-form-view {
 
 .phui-comment-form-view .phui-form-view label.aphront-form-label,
 .phui-comment-form-view .phui-form-view .aphront-form-error {
-  height: 26px;
-  line-height: 26px;
+  height: 28x;
+  line-height: 28px;
   padding: 0;
 }
 
 .phui-comment-form-view .aphront-form-error .phui-icon-view {
   padding: 4px;
+}
+
+.phui-comment-form-view .phui-form-view .phui-info-view {
+  margin: 16px;
+}
+
+.device-phone .phui-comment-form-view .phui-form-view .phui-info-view {
+  margin: 8px;
 }

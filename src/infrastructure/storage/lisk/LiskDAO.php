@@ -242,7 +242,7 @@ abstract class LiskDAO extends Phobject {
    * Get an existing, cached connection for this object.
    *
    * @param mode Connection mode.
-   * @return AprontDatabaseConnection|null  Connection, if it exists in cache.
+   * @return AphrontDatabaseConnection|null  Connection, if it exists in cache.
    * @task conn
    */
   protected function getEstablishedConnection($mode) {
@@ -953,7 +953,7 @@ abstract class LiskDAO extends Phobject {
    * @param  string 'r' for read, 'w' for read/write.
    * @param  bool True to force a new connection. The connection will not
    *              be retrieved from or saved into the connection cache.
-   * @return LiskDatabaseConnection   Lisk connection object.
+   * @return AphrontDatabaseConnection   Lisk connection object.
    *
    * @task   info
    */
@@ -1094,12 +1094,12 @@ abstract class LiskDAO extends Phobject {
 
 
   /**
-   *  Save this object, forcing the query to use INSERT regardless of object
-   *  state.
+   * Save this object, forcing the query to use INSERT regardless of object
+   * state.
    *
-   *  @return this
+   * @return this
    *
-   *  @task   save
+   * @task   save
    */
   public function insert() {
     $this->isEphemeralCheck();
@@ -1108,12 +1108,12 @@ abstract class LiskDAO extends Phobject {
 
 
   /**
-   *  Save this object, forcing the query to use UPDATE regardless of object
-   *  state.
+   * Save this object, forcing the query to use UPDATE regardless of object
+   * state.
    *
-   *  @return this
+   * @return this
    *
-   *  @task   save
+   * @task   save
    */
   public function update() {
     $this->isEphemeralCheck();
@@ -1192,6 +1192,7 @@ abstract class LiskDAO extends Phobject {
    * Internal implementation of INSERT and REPLACE.
    *
    * @param  const   Either "INSERT" or "REPLACE", to force the desired mode.
+   * @return this
    *
    * @task   save
    */
@@ -1780,10 +1781,13 @@ abstract class LiskDAO extends Phobject {
    * @task   util
    */
   public function __set($name, $value) {
-    phlog(
-      pht(
-        'Wrote to undeclared property %s.',
-        get_class($this).'::$'.$name));
+    // Hack for policy system hints, see PhabricatorPolicyRule for notes.
+    if ($name != '_hashKey') {
+      phlog(
+        pht(
+          'Wrote to undeclared property %s.',
+          get_class($this).'::$'.$name));
+    }
     $this->$name = $value;
   }
 

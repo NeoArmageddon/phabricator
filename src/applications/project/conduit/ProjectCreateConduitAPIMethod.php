@@ -10,6 +10,16 @@ final class ProjectCreateConduitAPIMethod extends ProjectConduitAPIMethod {
     return pht('Create a project.');
   }
 
+  public function getMethodStatus() {
+    return self::METHOD_STATUS_FROZEN;
+  }
+
+  public function getMethodStatusDescription() {
+    return pht(
+      'This method is frozen and will eventually be deprecated. New code '.
+      'should use "project.edit" instead.');
+  }
+
   protected function defineParamTypes() {
     return array(
       'name'       => 'required string',
@@ -32,7 +42,7 @@ final class ProjectCreateConduitAPIMethod extends ProjectConduitAPIMethod {
       $user);
 
     $project = PhabricatorProject::initializeNewProject($user);
-    $type_name = PhabricatorProjectTransaction::TYPE_NAME;
+    $type_name = PhabricatorProjectNameTransaction::TRANSACTIONTYPE;
     $members = $request->getValue('members');
     $xactions = array();
 
@@ -42,19 +52,22 @@ final class ProjectCreateConduitAPIMethod extends ProjectConduitAPIMethod {
 
     if ($request->getValue('icon')) {
       $xactions[] = id(new PhabricatorProjectTransaction())
-        ->setTransactionType(PhabricatorProjectTransaction::TYPE_ICON)
+        ->setTransactionType(
+            PhabricatorProjectIconTransaction::TRANSACTIONTYPE)
         ->setNewValue($request->getValue('icon'));
     }
 
     if ($request->getValue('color')) {
       $xactions[] = id(new PhabricatorProjectTransaction())
-        ->setTransactionType(PhabricatorProjectTransaction::TYPE_COLOR)
+        ->setTransactionType(
+          PhabricatorProjectColorTransaction::TRANSACTIONTYPE)
         ->setNewValue($request->getValue('color'));
     }
 
     if ($request->getValue('tags')) {
       $xactions[] = id(new PhabricatorProjectTransaction())
-        ->setTransactionType(PhabricatorProjectTransaction::TYPE_SLUGS)
+        ->setTransactionType(
+            PhabricatorProjectSlugsTransaction::TRANSACTIONTYPE)
         ->setNewValue($request->getValue('tags'));
     }
 

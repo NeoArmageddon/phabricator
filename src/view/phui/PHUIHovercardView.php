@@ -112,14 +112,17 @@ final class PHUIHovercardView extends AphrontTagView {
 
     $body = array();
 
+    $body_title = null;
     if ($this->detail) {
       $body_title = $this->detail;
-    } else {
+    } else if (!$this->fields) {
       // Fallback for object handles
       $body_title = $handle->getFullName();
     }
 
-    $body[] = phutil_tag_div('phui-hovercard-body-header', $body_title);
+    if ($body_title) {
+      $body[] = phutil_tag_div('phui-hovercard-body-header', $body_title);
+    }
 
     foreach ($this->fields as $field) {
       $item = array(
@@ -170,7 +173,7 @@ final class PHUIHovercardView extends AphrontTagView {
 
     foreach ($this->actions as $action) {
       $options = array(
-        'class' => 'button grey',
+        'class' => 'button button-grey',
         'href'  => $action['uri'],
       );
 

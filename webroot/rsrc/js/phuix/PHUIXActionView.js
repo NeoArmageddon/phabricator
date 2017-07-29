@@ -16,6 +16,7 @@ JX.install('PHUIXActionView', {
     _label: false,
     _handler: null,
     _selected: false,
+    _divider: false,
 
     _iconNode: null,
     _nameNode: null,
@@ -38,6 +39,15 @@ JX.install('PHUIXActionView', {
         this.getNode(),
         'phabricator-action-view-label',
         label);
+      return this;
+    },
+
+    setDivider: function(divider) {
+      this._divider = divider;
+      JX.DOM.alterClass(
+        this.getNode(),
+        'phabricator-action-view-type-divider',
+        divider);
       return this;
     },
 
@@ -77,16 +87,27 @@ JX.install('PHUIXActionView', {
 
     getNode: function() {
       if (!this._node) {
-        var attr = {
-          className: 'phabricator-action-view'
-        };
+        var classes = ['phabricator-action-view'];
+
+        if (this._href || this._handler) {
+          classes.push('phabricator-action-view-href');
+        }
+
+        if (this._icon) {
+          classes.push('action-has-icon');
+        }
 
         var content = [
           this._buildIconNode(),
           this._buildNameNode()
         ];
 
+        var attr = {
+          className: classes.join(' ')
+        };
         this._node = JX.$N('li', attr, content);
+
+        JX.Stratcom.addSigil(this._node, 'phuix-action-view');
       }
 
       return this._node;

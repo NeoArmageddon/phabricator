@@ -9,10 +9,10 @@
  * @task  meta  Application Management
  */
 abstract class PhabricatorApplication
-  extends Phobject
-  implements PhabricatorPolicyInterface {
-
-  const MAX_STATUS_ITEMS      = 100;
+  extends PhabricatorLiskDAO
+  implements
+    PhabricatorPolicyInterface,
+    PhabricatorApplicationTransactionInterface {
 
   const GROUP_CORE            = 'core';
   const GROUP_UTILITIES       = 'util';
@@ -26,6 +26,30 @@ abstract class PhabricatorApplication
       self::GROUP_ADMIN         => pht('Administration'),
       self::GROUP_DEVELOPER     => pht('Developer Tools'),
     );
+  }
+
+  final public function getApplicationName() {
+    return 'application';
+  }
+
+  final public function getTableName() {
+    return 'application_application';
+  }
+
+  final protected function getConfiguration() {
+    return array(
+      self::CONFIG_AUX_PHID => true,
+    ) + parent::getConfiguration();
+  }
+
+  final public function generatePHID() {
+    return $this->getPHID();
+  }
+
+  final public function save() {
+    // When "save()" is called on applications, we just return without
+    // actually writing anything to the database.
+    return $this;
   }
 
 
@@ -172,41 +196,40 @@ abstract class PhabricatorApplication
 
     $articles = $this->getHelpDocumentationArticles($viewer);
     if ($articles) {
-      $items[] = id(new PHUIListItemView())
-        ->setType(PHUIListItemView::TYPE_LABEL)
-        ->setName(pht('%s Documentation', $this->getName()));
       foreach ($articles as $article) {
-        $item = id(new PHUIListItemView())
+        $item = id(new PhabricatorActionView())
           ->setName($article['name'])
-          ->setIcon('fa-book')
           ->setHref($article['href'])
+          ->addSigil('help-item')
           ->setOpenInNewWindow(true);
-
         $items[] = $item;
       }
     }
 
     $command_specs = $this->getMailCommandObjects();
     if ($command_specs) {
-      $items[] = id(new PHUIListItemView())
-        ->setType(PHUIListItemView::TYPE_LABEL)
-        ->setName(pht('Email Help'));
       foreach ($command_specs as $key => $spec) {
         $object = $spec['object'];
 
         $class = get_class($this);
         $href = '/applications/mailcommands/'.$class.'/'.$key.'/';
-
-        $item = id(new PHUIListItemView())
+        $item = id(new PhabricatorActionView())
           ->setName($spec['name'])
-          ->setIcon('fa-envelope-o')
           ->setHref($href)
+          ->addSigil('help-item')
           ->setOpenInNewWindow(true);
         $items[] = $item;
       }
     }
 
-    return $items;
+    if ($items) {
+      $divider = id(new PhabricatorActionView())
+        ->addSigil('help-item')
+        ->setType(PhabricatorActionView::TYPE_DIVIDER);
+      array_unshift($items, $divider);
+    }
+
+    return array_values($items);
   }
 
   public function getHelpDocumentationArticles(PhabricatorUser $viewer) {
@@ -254,13 +277,12 @@ abstract class PhabricatorApplication
   }
 
   final protected function getInboundEmailSupportLink() {
-    return PhabricatorEnv::getDocLink('Configuring Inbound Email');
+    return PhabricatorEnv::getDoclink('Configuring Inbound Email');
   }
 
   public function getAppEmailBlurb() {
     throw new PhutilMethodNotImplementedException();
   }
-
 
 /* -(  Fact Integration  )--------------------------------------------------- */
 
@@ -271,20 +293,6 @@ abstract class PhabricatorApplication
 
 
 /* -(  UI Integration  )----------------------------------------------------- */
-
-
-  /**
-   * Render status elements (like "3 Waiting Reviews") for application list
-   * views. These provide a way to alert users to new or pending action items
-   * in applications.
-   *
-   * @param PhabricatorUser Viewing user.
-   * @return list<PhabricatorApplicationStatusView> Application status elements.
-   * @task ui
-   */
-  public function loadStatus(PhabricatorUser $user) {
-    return array();
-  }
 
 
   /**
@@ -311,23 +319,6 @@ abstract class PhabricatorApplication
    */
   public function buildMainMenuItems(
     PhabricatorUser $user,
-    PhabricatorController $controller = null) {
-    return array();
-  }
-
-
-  /**
-   * Build extra items for the main menu. Generally, this is used to render
-   * static dropdowns.
-   *
-   * @param  PhabricatorUser    The viewing user.
-   * @param  AphrontController  The current controller. May be null for special
-   *                            pages like 404, exception handlers, etc.
-   * @return view               List of menu items.
-   * @task ui
-   */
-  public function buildMainMenuExtraNodes(
-    PhabricatorUser $viewer,
     PhabricatorController $controller = null) {
     return array();
   }
@@ -429,18 +420,27 @@ abstract class PhabricatorApplication
     }
 
     $cache = PhabricatorCaches::getRequestCache();
-    $viewer_phid = $viewer->getPHID();
-    $key = 'app.'.$class.'.installed.'.$viewer_phid;
+    $viewer_fragment = $viewer->getCacheFragment();
+    $key = 'app.'.$class.'.installed.'.$viewer_fragment;
 
     $result = $cache->getKey($key);
     if ($result === null) {
       if (!self::isClassInstalled($class)) {
         $result = false;
       } else {
-        $result = PhabricatorPolicyFilter::hasCapability(
-          $viewer,
-          self::getByClass($class),
-          PhabricatorPolicyCapability::CAN_VIEW);
+        $application = self::getByClass($class);
+        if (!$application->canUninstall()) {
+          // If the application can not be uninstalled, always allow viewers
+          // to see it. In particular, this allows logged-out viewers to see
+          // Settings and load global default settings even if the install
+          // does not allow public viewers.
+          $result = true;
+        } else {
+          $result = PhabricatorPolicyFilter::hasCapability(
+            $viewer,
+            self::getByClass($class),
+            PhabricatorPolicyCapability::CAN_VIEW);
+        }
       }
 
       $cache->setKey($key, $result);
@@ -618,20 +618,45 @@ abstract class PhabricatorApplication
     return $base.'(?:query/(?P<queryKey>[^/]+)/)?';
   }
 
-  protected function getPanelRouting($controller) {
+  protected function getProfileMenuRouting($controller) {
     $edit_route = $this->getEditRoutePattern();
 
+    $mode_route = '(?P<itemEditMode>global|custom)/';
+
     return array(
-      '(?P<panelAction>view)/(?P<panelID>[^/]+)/' => $controller,
-      '(?P<panelAction>hide)/(?P<panelID>[^/]+)/' => $controller,
-      '(?P<panelAction>default)/(?P<panelID>[^/]+)/' => $controller,
-      '(?P<panelAction>configure)/' => $controller,
-      '(?P<panelAction>reorder)/' => $controller,
-      '(?P<panelAction>edit)/'.$edit_route => $controller,
-      '(?P<panelAction>new)/(?<panelKey>[^/]+)/'.$edit_route => $controller,
-      '(?P<panelAction>builtin)/(?<panelID>[^/]+)/'.$edit_route
+      '(?P<itemAction>view)/(?P<itemID>[^/]+)/' => $controller,
+      '(?P<itemAction>hide)/(?P<itemID>[^/]+)/' => $controller,
+      '(?P<itemAction>default)/(?P<itemID>[^/]+)/' => $controller,
+      '(?P<itemAction>configure)/' => $controller,
+      '(?P<itemAction>configure)/'.$mode_route => $controller,
+      '(?P<itemAction>reorder)/'.$mode_route => $controller,
+      '(?P<itemAction>edit)/'.$edit_route => $controller,
+      '(?P<itemAction>new)/'.$mode_route.'(?<itemKey>[^/]+)/'.$edit_route
+        => $controller,
+      '(?P<itemAction>builtin)/(?<itemID>[^/]+)/'.$edit_route
         => $controller,
     );
   }
 
+/* -(  PhabricatorApplicationTransactionInterface  )------------------------- */
+
+
+  public function getApplicationTransactionEditor() {
+    return new PhabricatorApplicationEditor();
+  }
+
+  public function getApplicationTransactionObject() {
+    return $this;
+  }
+
+  public function getApplicationTransactionTemplate() {
+    return new PhabricatorApplicationApplicationTransaction();
+  }
+
+  public function willRenderTimeline(
+    PhabricatorApplicationTransactionView $timeline,
+    AphrontRequest $request) {
+
+    return $timeline;
+  }
 }

@@ -45,11 +45,30 @@ final class PhabricatorFilesOnDiskBuiltinFile
     $root = $root.'/resources/builtin/';
 
     $map = array();
-    $list = Filesystem::listDirectory($root, $include_hidden = false);
+    $list = id(new FileFinder($root))
+      ->withType('f')
+      ->withFollowSymlinks(true)
+      ->find();
+
     foreach ($list as $file) {
       $map[$file] = $root.$file;
     }
+    return $map;
+  }
 
+  public function getProjectBuiltinFiles() {
+    $root = dirname(phutil_get_library_root('phabricator'));
+    $root = $root.'/resources/builtin/projects/';
+
+    $map = array();
+    $list = id(new FileFinder($root))
+      ->withType('f')
+      ->withFollowSymlinks(true)
+      ->find();
+
+    foreach ($list as $file) {
+      $map[$file] = $root.$file;
+    }
     return $map;
   }
 

@@ -66,7 +66,7 @@
 }
 
 .phui-header-shell.diviner-section-header .phui-header-header {
-  color: #000;
+  color: {$blacktext};
   font-size: 20px;
 }
 
@@ -172,7 +172,7 @@ body .diviner-view .diviner-section-content .phui-header-shell {
   margin: 4px -16px;
 }
 
-.diviner-book-item:hover {
+a.diviner-book-item:hover {
   text-decoration: none;
 }
 

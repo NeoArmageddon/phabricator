@@ -172,7 +172,7 @@ final class PhamePost extends PhameDAO
   }
 
   public function getSlug() {
-    return PhabricatorSlug::normalizeProjectSlug($this->getTitle(), true);
+    return PhabricatorSlug::normalizeProjectSlug($this->getTitle());
   }
 
   public function getHeaderImageURI() {
@@ -200,8 +200,9 @@ final class PhamePost extends PhameDAO
   }
 
   public function getPolicy($capability) {
-    // Draft posts are visible only to the author. Published posts are visible
-    // to whoever the blog is visible to.
+    // Draft and archived posts are visible only to the author and other
+    // users who can edit the blog. Published posts are visible to whoever
+    // the blog is visible to.
 
     switch ($capability) {
       case PhabricatorPolicyCapability::CAN_VIEW:
@@ -241,8 +242,8 @@ final class PhamePost extends PhameDAO
 
 
   public function getMarkupFieldKey($field) {
-    $hash = PhabricatorHash::digest($this->getMarkupText($field));
-    return $this->getPHID().':'.$field.':'.$hash;
+    $content = $this->getMarkupText($field);
+    return PhabricatorMarkupEngine::digestRemarkupContent($this, $content);
   }
 
   public function newMarkupEngine($field) {

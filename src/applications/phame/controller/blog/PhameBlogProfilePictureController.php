@@ -76,7 +76,8 @@ final class PhameBlogProfilePictureController
 
         $xactions = array();
         $xactions[] = id(new PhameBlogTransaction())
-          ->setTransactionType(PhameBlogTransaction::TYPE_PROFILEIMAGE)
+          ->setTransactionType(
+            PhameBlogProfileImageTransaction::TRANSACTIONTYPE)
           ->setNewValue($new_value);
 
         $editor = id(new PhameBlogEditor())
@@ -132,7 +133,7 @@ final class PhameBlogProfilePictureController
       $button = javelin_tag(
         'button',
         array(
-          'class' => 'grey profile-image-button',
+          'class' => 'button-grey profile-image-button',
           'sigil' => 'has-tooltip',
           'meta' => array(
             'tip' => $spec['tip'],

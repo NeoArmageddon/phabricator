@@ -20,7 +20,7 @@
 }
 
 .differential-diff {
-  background: #fff;
+  background: {$diff.background};
   width: 100%;
   border-top: 1px solid {$lightblueborder};
   border-bottom: 1px solid {$lightblueborder};
@@ -67,10 +67,6 @@
   padding: 1px 4px;
 }
 
-.device .differential-diff .inline > td {
-  padding: 4px;
-}
-
 .differential-diff td .zwsp {
   position: absolute;
   width: 0;
@@ -108,16 +104,9 @@
   padding: 0 2px;
 }
 
-.prose-diff span.old {
-  color: {$redtext};
-}
-
+.prose-diff span.old,
 .prose-diff span.new {
-  color: {$greentext};
-}
-
-.differential-diff th.selected {
-  background-color: {$sh-yellowbackground};
+  color: {$darkgreytext};
 }
 
 .differential-changeset-immutable .differential-diff th {
@@ -125,11 +114,11 @@
 }
 
 .differential-diff td.old {
-  background: rgba(251, 175, 175, .3);
+  background: {$old-background};
 }
 
 .differential-diff td.new {
-  background: rgba(151, 234, 151, .3);
+  background: {$new-background};
 }
 
 .differential-diff td.old-rebase {
@@ -140,16 +129,16 @@
   background: #eeffee;
 }
 
-.differential-diff td.old-full,
 .differential-diff td.old span.bright,
+.differential-diff td.old-full,
 .prose-diff span.old {
-  background: rgba(251, 175, 175, .7);
+  background: {$old-bright};
 }
 
-.differential-diff td.new-full,
 .differential-diff td.new span.bright,
+.differential-diff td.new-full,
 .prose-diff span.new {
-  background: rgba(151, 234, 151, .6);
+  background: {$new-bright};
 }
 
 .differential-diff td.copy {
@@ -160,12 +149,12 @@
 
 .differential-diff td.new-copy,
 .differential-diff td.new-copy span.bright {
-  background: {$lightyellow};
+  background: {$copy-background};
 }
 
 .differential-diff td.new-move,
 .differential-diff td.new-move span.bright {
-  background: {$yellow};
+  background: {$move-background};
 }
 
 .differential-diff td.comment {
@@ -277,9 +266,9 @@ td.cov-I {
 }
 
 .differential-meta-notice {
-  border-top: 1px solid {$sh-lightyellowborder};
-  border-bottom: 1px solid {$sh-lightyellowborder};
-  background-color: {$sh-yellowbackground};
+  border-top: 1px solid {$gentle.highlight.border};
+  border-bottom: 1px solid {$gentle.highlight.border};
+  background-color: {$gentle.highlight};
   padding: 12px;
 }
 
@@ -291,7 +280,7 @@ td.cov-I {
   font-size: {$biggestfontsize};
   padding: 2px 0 20px 12px;
   line-height: 20px;
-  color: #000;
+  color: {$blacktext};
 }
 
 .device-phone .differential-changeset h1 {
@@ -307,16 +296,17 @@ td.cov-I {
   top: 0;
   left: 0;
   box-sizing: border-box;
+  pointer-events: none;
 }
 
 .differential-diff .inline > td {
-  padding: 8px 12px;
+  padding: 0;
 }
 
 .differential-loading {
-  border-top: 1px solid {$yellow};
-  border-bottom: 1px solid {$yellow};
-  background-color: {$lightyellow};
+  border-top: 1px solid {$gentle.highlight.border};
+  border-bottom: 1px solid {$gentle.highlight.border};
+  background-color: {$gentle.highlight};
   padding: 12px;
   text-align: center;
 }
@@ -327,6 +317,7 @@ td.cov-I {
   border: 1px solid {$blue};
   text-align: center;
   background-color: {$lightblue};
+  margin: 8px;
 }
 
 .differential-collapse-undo a {
@@ -386,4 +377,37 @@ tr.differential-inline-loading {
 
 .differential-review-stage {
   position: relative;
+}
+
+.diff-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: {$page.content};
+  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid {$lightgreyborder};
+  padding: 8px 18px;
+  vertical-align: middle;
+  font-weight: bold;
+  font-size: {$biggerfontsize};
+  line-height: 28px;
+}
+
+.diff-banner-path {
+  color: {$greytext};
+}
+
+.diff-banner-buttons .button {
+  margin-left: 8px;
+}
+
+.diff-banner-has-unsaved,
+.diff-banner-has-unsubmitted,
+.diff-banner-has-draft-done {
+  background: {$gentle.highlight};
+}
+
+.diff-banner-buttons {
+  float: right;
 }

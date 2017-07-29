@@ -20,16 +20,16 @@ final class CelerityDefaultPostprocessor
   public function buildVariables() {
     return array(
       // Fonts
-      'basefont' => "13px 'Segoe UI', 'Segoe UI Web Regular', ".
-        "'Segoe UI Symbol', 'Lato', 'Helvetica Neue', Helvetica, ".
-        "Arial, sans-serif",
+      'basefont' => "13px 'Segoe UI', 'Segoe UI Emoji', ".
+        "'Segoe UI Symbol', 'Lato', 'Helvetica Neue', ".
+        "Helvetica, Arial, sans-serif",
 
-      'fontfamily' => "'Segoe UI', 'Segoe UI Web Regular', ".
-        "'Segoe UI Symbol', 'Lato', 'Helvetica Neue', Helvetica, ".
-        "Arial, sans-serif",
+      'fontfamily' => "'Segoe UI', 'Segoe UI Emoji', ".
+        "'Segoe UI Symbol', 'Lato', 'Helvetica Neue', ".
+        "Helvetica, Arial, sans-serif",
 
       // Drop Shadow
-      'dropshadow' => '0 1px 6px rgba(0, 0, 0, .25)',
+      'dropshadow' => '0 2px 12px rgba(0, 0, 0, .20)',
       'whitetextshadow' => '0 1px 0 rgba(255, 255, 255, 1)',
 
       // Anchors
@@ -72,6 +72,8 @@ final class CelerityDefaultPostprocessor
       'hoverselectedblue' => '#e6e9ee',
       'borderinset' => 'inset 0 0 0 1px rgba(55,55,55,.15)',
       'timeline'    => '#d5d8e1',
+      'timeline.icon.background' => '#E6E9F1',
+      'bluepropertybackground' => '#eff3fc',
 
       // Alphas
       'alphawhite'          => '255,255,255',
@@ -100,6 +102,7 @@ final class CelerityDefaultPostprocessor
       'lightbluetext'       => '#8C98B8',
       'bluetext'            => '#6B748C',
       'darkbluetext'        => '#464C5C',
+      'blacktext'           => '#000',
 
       // Base Greens
       'lightgreenborder'      => '#bfdac1',
@@ -192,19 +195,46 @@ final class CelerityDefaultPostprocessor
       'sh-disabledtext'         => '#a6a6a6',
       'sh-disabledbackground'   => '#f3f3f3',
 
+      // Diffs
+      'diff.background' => '#fff',
+      'new-background' => 'rgba(151, 234, 151, .3)',
+      'new-bright' => 'rgba(151, 234, 151, .6)',
+      'old-background' => 'rgba(251, 175, 175, .3)',
+      'old-bright' => 'rgba(251, 175, 175, .7)',
+      'move-background' => '#fdf5d4',
+      'copy-background' => '#f1c40f',
+
+      // Usually light yellow
+      'gentle.highlight' => '#fdf3da',
+      'gentle.highlight.border' => '#c9b8a8',
+
+      'paste.content' => '#fffef5',
+      'paste.border' => '#e9dbcd',
+      'paste.highlight' => '#fdf3da',
+
       // Background color for "most" themes.
-      'page.background' => '#f8f8fb',
-      'page.sidenav' => '#f0f0f2',
+      'page.background' => '#f3f5f7',
+      'page.sidenav' => '#eaedf1',
+      'page.content' => '#fff',
 
       'menu.profile.text' => 'rgba(255,255,255,.8)',
       'menu.profile.text.selected' => 'rgba(255,255,255,1)',
       'menu.profile.icon.disabled' => 'rgba(255,255,255,.4)',
 
       'menu.main.height' => '44px',
-
       'menu.profile.width' => '240px',
-      'menu.profile.width.collapsed' => '88px',
-      'menu.profile.item.height' => '46px',
+
+      // Buttons
+      'blue.button.color' => '#2980b9',
+      'blue.button.gradient' => 'linear-gradient(to bottom, #3498db, #2980b9)',
+      'blue.button.hover' => 'linear-gradient(to bottom, #3498db, #1b6ba0)',
+      'green.button.color' => '#139543',
+      'green.button.gradient' => 'linear-gradient(to bottom, #23BB5B, #139543)',
+      'green.button.hover' => 'linear-gradient(to bottom, #23BB5B, #178841)',
+      'grey.button.color' => '#F7F7F9',
+      'grey.button.gradient' => 'linear-gradient(to bottom, #ffffff, #f1f0f1)',
+      'grey.button.hover' => 'linear-gradient(to bottom, #ffffff, #eeebec)',
+
 
     );
   }

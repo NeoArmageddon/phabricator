@@ -1,6 +1,6 @@
 <?php
 
-final class PhabricatorFileLinkView extends AphrontView {
+final class PhabricatorFileLinkView extends AphrontTagView {
 
   private $fileName;
   private $fileDownloadURI;
@@ -8,6 +8,7 @@ final class PhabricatorFileLinkView extends AphrontView {
   private $fileViewable;
   private $filePHID;
   private $fileMonogram;
+  private $fileSize;
   private $customClass;
 
   public function setCustomClass($custom_class) {
@@ -73,7 +74,20 @@ final class PhabricatorFileLinkView extends AphrontView {
     return $this->fileName;
   }
 
-  public function getMetadata() {
+  public function setFileSize($file_size) {
+    $this->fileSize = $file_size;
+    return $this;
+  }
+
+  private function getFileSize() {
+    return $this->fileSize;
+  }
+
+  private function getFileIcon() {
+    return FileTypeIcon::getFileIcon($this->getFileName());
+  }
+
+  public function getMeta() {
     return array(
       'phid'     => $this->getFilePHID(),
       'viewable' => $this->getFileViewable(),
@@ -81,37 +95,89 @@ final class PhabricatorFileLinkView extends AphrontView {
       'dUri'     => $this->getFileDownloadURI(),
       'name'     => $this->getFileName(),
       'monogram' => $this->getFileMonogram(),
+      'icon'     => $this->getFileIcon(),
+      'size'     => $this->getFileSize(),
     );
   }
 
-  public function render() {
-    require_celerity_resource('phabricator-remarkup-css');
-    require_celerity_resource('phui-lightbox-css');
+  protected function getTagName() {
+    return 'div';
+  }
 
+  protected function getTagAttributes() {
     $mustcapture = true;
     $sigil = 'lightboxable';
-    $meta = $this->getMetadata();
+    $meta = $this->getMeta();
 
     $class = 'phabricator-remarkup-embed-layout-link';
     if ($this->getCustomClass()) {
       $class = $this->getCustomClass();
     }
 
-    $icon = id(new PHUIIconView())
-      ->setIcon('fa-file-text-o');
+    return array(
+      'href'        => $this->getFileViewURI(),
+      'class'       => $class,
+      'sigil'       => $sigil,
+      'meta'        => $meta,
+      'mustcapture' => $mustcapture,
+    );
+  }
 
-    return javelin_tag(
-      'a',
+  protected function getTagContent() {
+    require_celerity_resource('phabricator-remarkup-css');
+    require_celerity_resource('phui-lightbox-css');
+
+    $icon = id(new PHUIIconView())
+      ->setIcon($this->getFileIcon())
+      ->addClass('phabricator-remarkup-embed-layout-icon');
+
+    $dl_icon = id(new PHUIIconView())
+      ->setIcon('fa-download');
+
+    $download_form = phabricator_form(
+      $this->getViewer(),
       array(
-        'href'        => $this->getFileViewURI(),
-        'class'       => $class,
-        'sigil'       => $sigil,
-        'meta'        => $meta,
-        'mustcapture' => $mustcapture,
+        'action' => $this->getFileDownloadURI(),
+        'method' => 'POST',
+        'class'  => 'embed-download-form',
+        'sigil'  => 'embed-download-form download',
+      ),
+      phutil_tag(
+        'button',
+        array(
+          'class' => 'phabricator-remarkup-embed-layout-download',
+          'type' => 'submit',
+        ),
+        pht('Download')));
+
+    $info = phutil_tag(
+      'span',
+      array(
+        'class' => 'phabricator-remarkup-embed-layout-info',
+      ),
+      $this->getFileSize());
+
+    $name = phutil_tag(
+      'span',
+      array(
+        'class' => 'phabricator-remarkup-embed-layout-name',
+      ),
+      $this->getFileName());
+
+    $inner = phutil_tag(
+      'span',
+      array(
+        'class' => 'phabricator-remarkup-embed-layout-info-block',
       ),
       array(
-        $icon,
-        $this->getFileName(),
+        $name,
+        $info,
       ));
+
+    return array(
+      $icon,
+      $inner,
+      $download_form,
+    );
   }
 }

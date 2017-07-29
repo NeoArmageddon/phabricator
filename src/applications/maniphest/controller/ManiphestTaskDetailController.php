@@ -36,6 +36,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
       ManiphestTaskHasMockEdgeType::EDGECONST,
       PhabricatorObjectMentionedByObjectEdgeType::EDGECONST,
       PhabricatorObjectMentionsObjectEdgeType::EDGECONST,
+      ManiphestTaskHasDuplicateTaskEdgeType::EDGECONST,
     );
 
     $phid = $task->getPHID();
@@ -159,6 +160,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
 
     $related_tabs[] = $this->newMocksTab($task, $query);
     $related_tabs[] = $this->newMentionsTab($task, $query);
+    $related_tabs[] = $this->newDuplicatesTab($task, $query);
 
     $tab_view = null;
 
@@ -219,7 +221,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
 
     $status = $task->getStatus();
     $status_name = ManiphestTaskStatus::renderFullDescription(
-      $status, $priority_name, $priority_color);
+      $status, $priority_name);
     $view->addProperty(PHUIHeaderView::PROPERTY_STATUS, $status_name);
 
     $view->setHeaderIcon(ManiphestTaskStatus::getStatusIcon(
@@ -233,11 +235,17 @@ final class ManiphestTaskDetailController extends ManiphestController {
           ManiphestTaskPoints::getPointsLabel());
         $tag = id(new PHUITagView())
           ->setName($points_name)
-          ->setShade('blue')
+          ->setColor(PHUITagView::COLOR_BLUE)
           ->setType(PHUITagView::TYPE_SHADE);
 
         $view->addTag($tag);
       }
+    }
+
+    $subtype = $task->newSubtypeObject();
+    if ($subtype && $subtype->hasTagView()) {
+      $subtype_tag = $subtype->newTagView();
+      $view->addTag($subtype_tag);
     }
 
     return $view;
@@ -257,6 +265,12 @@ final class ManiphestTaskDetailController extends ManiphestController {
       $task,
       PhabricatorPolicyCapability::CAN_EDIT);
 
+    $can_interact = PhabricatorPolicyFilter::canInteract($viewer, $task);
+
+    // We expect a policy dialog if you can't edit the task, and expect a
+    // lock override dialog if you can't interact with it.
+    $workflow_edit = (!$can_edit || !$can_interact);
+
     $curtain = $this->newCurtainView($task);
 
     $curtain->addAction(
@@ -265,13 +279,13 @@ final class ManiphestTaskDetailController extends ManiphestController {
         ->setIcon('fa-pencil')
         ->setHref($this->getApplicationURI("/task/edit/{$id}/"))
         ->setDisabled(!$can_edit)
-        ->setWorkflow(!$can_edit));
+        ->setWorkflow($workflow_edit));
 
-    $edit_config = $edit_engine->loadDefaultEditConfiguration();
+    $edit_config = $edit_engine->loadDefaultEditConfiguration($task);
     $can_create = (bool)$edit_config;
 
     $can_reassign = $edit_engine->hasEditAccessToTransaction(
-      ManiphestTransaction::TYPE_OWNER);
+      ManiphestTaskOwnerTransaction::TRANSACTIONTYPE);
 
     if ($can_create) {
       $form_key = $edit_config->getIdentifier();
@@ -397,7 +411,8 @@ final class ManiphestTaskDetailController extends ManiphestController {
 
       foreach ($commit_phids as $phid) {
         $revisions_commits[$phid] = $handles->renderHandle($phid)
-          ->setShowHovercard(true);
+          ->setShowHovercard(true)
+          ->setShowStateIcon(true);
         $revision_phid = key($drev_edges[$phid][$commit_drev]);
         $revision_handle = $handles->getHandleIfExists($revision_phid);
         if ($revision_handle) {
@@ -412,12 +427,16 @@ final class ManiphestTaskDetailController extends ManiphestController {
     }
 
     foreach ($edge_types as $edge_type => $edge_name) {
-      if ($edges[$edge_type]) {
-        $edge_handles = $viewer->loadHandles(array_keys($edges[$edge_type]));
-        $view->addProperty(
-          $edge_name,
-          $edge_handles->renderList());
+      if (!$edges[$edge_type]) {
+        continue;
       }
+
+      $edge_handles = $viewer->loadHandles(array_keys($edges[$edge_type]));
+
+      $edge_list = $edge_handles->renderList()
+        ->setShowStateIcons(true);
+
+      $view->addProperty($edge_name, $edge_list);
     }
 
     if ($revisions_commits) {
@@ -533,6 +552,32 @@ final class ManiphestTaskDetailController extends ManiphestController {
     return id(new PHUITabView())
       ->setName(pht('Mentions'))
       ->setKey('mentions')
+      ->appendChild($view);
+  }
+
+  private function newDuplicatesTab(
+    ManiphestTask $task,
+    PhabricatorEdgeQuery $edge_query) {
+
+    $in_type = ManiphestTaskHasDuplicateTaskEdgeType::EDGECONST;
+    $in_phids = $edge_query->getDestinationPHIDs(array(), array($in_type));
+
+    $viewer = $this->getViewer();
+    $in_handles = $viewer->loadHandles($in_phids);
+    $in_handles = $this->getCompleteHandles($in_handles);
+
+    $view = new PHUIPropertyListView();
+
+    if (!count($in_handles)) {
+      return null;
+    }
+
+    $view->addProperty(
+      pht('Duplicates Merged Here'), $in_handles->renderList());
+
+    return id(new PHUITabView())
+      ->setName(pht('Duplicates'))
+      ->setKey('duplicates')
       ->appendChild($view);
   }
 

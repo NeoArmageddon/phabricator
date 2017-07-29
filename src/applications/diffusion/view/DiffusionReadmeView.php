@@ -73,18 +73,6 @@ final class DiffusionReadmeView extends DiffusionView {
           ->getOutput($markup_object, $markup_field);
 
         $engine = $markup_object->newMarkupEngine($markup_field);
-        $toc = PhutilRemarkupHeaderBlockRule::renderTableOfContents($engine);
-        if ($toc) {
-          $toc = phutil_tag_div(
-            'phabricator-remarkup-toc',
-            array(
-              phutil_tag_div(
-                'phabricator-remarkup-toc-header',
-                pht('Table of Contents')),
-              $toc,
-            ));
-          $content = array($toc, $content);
-        }
 
         $readme_content = $content;
         $class = null;
@@ -106,15 +94,17 @@ final class DiffusionReadmeView extends DiffusionView {
     }
 
     $readme_content = phutil_tag_div($class, $readme_content);
-    $header = id(new PHUIHeaderView())
-      ->setHeader($readme_name);
-
     $document = id(new PHUIDocumentViewPro())
       ->setFluid(true)
       ->appendChild($readme_content);
 
+    $header = id(new PHUIHeaderView())
+      ->setHeader($readme_name)
+      ->addClass('diffusion-panel-header-view');
+
     return id(new PHUIObjectBoxView())
       ->setHeader($header)
+      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
       ->appendChild($document)
       ->addClass('diffusion-readme-view');
   }

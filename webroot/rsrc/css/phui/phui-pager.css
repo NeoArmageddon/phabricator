@@ -4,5 +4,11 @@
 
 .phui-pager-view {
   clear: both;
-  text-align: right;
+  text-align: center;
+}
+
+.phui-pager-view a.button.current,
+.phui-pager-view a.button.current:hover {
+  border-color: {$sh-orangetext};
+  color: {$sh-orangetext};
 }

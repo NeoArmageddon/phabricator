@@ -13,8 +13,14 @@ input.diffusion-clone-uri {
   color: {$lightgreytext};
 }
 
+.diffusion-clone-label {
+  height: 30px;
+  line-height: 28px;
+}
+
 .diffusion-browse-name {
   margin-left: 8px;
+  letter-spacing: 0.02em;
 }
 
 .diffusion-link-icon + .diffusion-link-icon {
@@ -44,6 +50,6 @@ input.diffusion-clone-uri {
 }
 
 .diffusion-clone-uri-table th a.button .phui-icon-view {
-  left: 12px;
+  left: 15px;
   top: 7px;
 }

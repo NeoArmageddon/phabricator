@@ -12,7 +12,6 @@ final class PhabricatorOwnersPackage
     PhabricatorNgramsInterface {
 
   protected $name;
-  protected $originalName;
   protected $auditingEnabled;
   protected $autoReview;
   protected $description;
@@ -26,6 +25,7 @@ final class PhabricatorOwnersPackage
   private $paths = self::ATTACHABLE;
   private $owners = self::ATTACHABLE;
   private $customFields = self::ATTACHABLE;
+  private $pathRepositoryMap = array();
 
   const STATUS_ACTIVE = 'active';
   const STATUS_ARCHIVED = 'archived';
@@ -104,8 +104,7 @@ final class PhabricatorOwnersPackage
       self::CONFIG_TIMESTAMPS => false,
       self::CONFIG_AUX_PHID => true,
       self::CONFIG_COLUMN_SCHEMA => array(
-        'name' => 'sort128',
-        'originalName' => 'text255',
+        'name' => 'sort',
         'description' => 'text',
         'primaryOwnerPHID' => 'phid?',
         'auditingEnabled' => 'bool',
@@ -136,9 +135,6 @@ final class PhabricatorOwnersPackage
 
   public function setName($name) {
     $this->name = $name;
-    if (!$this->getID()) {
-      $this->originalName = $name;
-    }
     return $this;
   }
 
@@ -301,27 +297,54 @@ final class PhabricatorOwnersPackage
     // a more specific package.
     if ($weak) {
       foreach ($path_packages as $match => $packages) {
+
+        // Group packages by length.
+        $length_map = array();
+        foreach ($packages as $package_id => $package) {
+          $length_map[$package['length']][$package_id] = $package;
+        }
+
+        // For each path length, remove all weak packages if there are any
+        // strong packages of the same length. This makes sure that if there
+        // are one or more strong claims on a particular path, only those
+        // claims stand.
+        foreach ($length_map as $package_list) {
+          $any_strong = false;
+          foreach ($package_list as $package_id => $package) {
+            if (!isset($weak[$package_id])) {
+              $any_strong = true;
+              break;
+            }
+          }
+
+          if ($any_strong) {
+            foreach ($package_list as $package_id => $package) {
+              if (isset($weak[$package_id])) {
+                unset($packages[$package_id]);
+              }
+            }
+          }
+        }
+
         $packages = isort($packages, 'length');
         $packages = array_reverse($packages, true);
 
-        $first = null;
+        $best_length = null;
         foreach ($packages as $package_id => $package) {
-          // If this is the first package we've encountered, note it and
-          // continue. We're iterating over the packages from longest to
-          // shortest match, so this package always has the strongest claim
-          // on the path.
-          if ($first === null) {
-            $first = $package_id;
+          // If this is the first package we've encountered, note its length.
+          // We're iterating over the packages from longest to shortest match,
+          // so packages of this length always have the best claim on the path.
+          if ($best_length === null) {
+            $best_length = $package['length'];
+          }
+
+          // If this package has the same length as the best length, its claim
+          // stands.
+          if ($package['length'] === $best_length) {
             continue;
           }
 
-          // If this is the first package we saw, its claim stands even if it
-          // is a weak package.
-          if ($first === $package_id) {
-            continue;
-          }
-
-          // If this is a weak package and not the first package we saw,
+          // If this is a weak package and does not have the best length,
           // cede its claim to the stronger package.
           if (isset($weak[$package_id])) {
             unset($packages[$package_id]);
@@ -369,11 +392,32 @@ final class PhabricatorOwnersPackage
   public function attachPaths(array $paths) {
     assert_instances_of($paths, 'PhabricatorOwnersPath');
     $this->paths = $paths;
+
+    // Drop this cache if we're attaching new paths.
+    $this->pathRepositoryMap = array();
+
     return $this;
   }
 
   public function getPaths() {
     return $this->assertAttached($this->paths);
+  }
+
+  public function getPathsForRepository($repository_phid) {
+    if (isset($this->pathRepositoryMap[$repository_phid])) {
+      return $this->pathRepositoryMap[$repository_phid];
+    }
+
+    $map = array();
+    foreach ($this->getPaths() as $path) {
+      if ($path->getRepositoryPHID() == $repository_phid) {
+        $map[] = $path;
+      }
+    }
+
+    $this->pathRepositoryMap[$repository_phid] = $map;
+
+    return $this->pathRepositoryMap[$repository_phid];
   }
 
   public function attachOwners(array $owners) {

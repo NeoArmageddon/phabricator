@@ -143,6 +143,7 @@ abstract class DiffusionRequest extends Phobject {
     $query = id(new PhabricatorRepositoryQuery())
       ->setViewer($viewer)
       ->withIdentifiers(array($identifier))
+      ->needProfileImage(true)
       ->needURIs(true);
 
     if ($need_edit) {
@@ -644,7 +645,7 @@ abstract class DiffusionRequest extends Phobject {
     return $match;
   }
 
-  private function resolveRefs(array $refs, array $types) {
+  public function resolveRefs(array $refs, array $types = array()) {
     // First, try to resolve refs from fast cache sources.
     $cached_query = id(new DiffusionCachedResolveRefsQuery())
       ->setRepository($this->getRepository())

@@ -64,17 +64,21 @@ final class DiffusionTagListController extends DiffusionController {
         ->needCommitData(true)
         ->execute();
 
-      $view = id(new DiffusionTagListView())
+      $tag_list = id(new DiffusionTagListView())
         ->setTags($tags)
         ->setUser($viewer)
         ->setCommits($commits)
         ->setDiffusionRequest($drequest);
 
-      $phids = $view->getRequiredHandlePHIDs();
+      $phids = $tag_list->getRequiredHandlePHIDs();
       $handles = $this->loadViewerHandles($phids);
-      $view->setHandles($handles);
+      $tag_list->setHandles($handles);
 
-      $content = $view;
+      $content = id(new PHUIObjectBoxView())
+        ->setHeaderText($repository->getDisplayName())
+        ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
+        ->setTable($tag_list)
+        ->setPager($pager);
     }
 
     $crumbs = $this->buildCrumbs(
@@ -84,19 +88,12 @@ final class DiffusionTagListController extends DiffusionController {
       ));
     $crumbs->setBorder(true);
 
-    $box = id(new PHUIObjectBoxView())
-      ->setHeaderText($repository->getDisplayName())
-      ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
-      ->setTable($view);
-
-    $pager_box = $this->renderTablePagerBox($pager);
+    $tabs = $this->buildTabsView('tags');
 
     $view = id(new PHUITwoColumnView())
       ->setHeader($header)
-      ->setFooter(array(
-        $box,
-        $pager_box,
-      ));
+      ->setTabs($tabs)
+      ->setFooter($content);
 
     return $this->newPage()
       ->setTitle(
@@ -105,7 +102,8 @@ final class DiffusionTagListController extends DiffusionController {
           $repository->getDisplayName(),
         ))
       ->setCrumbs($crumbs)
-      ->appendChild($view);
+      ->appendChild($view)
+      ->addClass('diffusion-history-view');
   }
 
 }

@@ -141,7 +141,9 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
       return array();
     }
 
-    $tokens = preg_split('/[\s\[\]-]+/u', $string);
+    // NOTE: Splitting on "(" and ")" is important for milestones.
+
+    $tokens = preg_split('/[\s\[\]\(\)-]+/u', $string);
     $tokens = array_unique($tokens);
 
     // Make sure we don't return the empty token, as this will boil down to a
@@ -394,13 +396,16 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
       if (!self::isFunctionToken($token)) {
         $results[] = $token;
       } else {
-        $evaluate[] = $token;
+        // Put a placeholder in the result list so that we retain token order
+        // when possible. We'll overwrite this below.
+        $results[] = null;
+        $evaluate[last_key($results)] = $token;
       }
     }
 
     $results = $this->evaluateValues($results);
 
-    foreach ($evaluate as $function) {
+    foreach ($evaluate as $result_key => $function) {
       $function = self::parseFunction($function);
       if (!$function) {
         throw new PhabricatorTypeaheadInvalidTokenException();
@@ -409,11 +414,23 @@ abstract class PhabricatorTypeaheadDatasource extends Phobject {
       $name = $function['name'];
       $argv = $function['argv'];
 
-      foreach ($this->evaluateFunction($name, array($argv)) as $phid) {
-        $results[] = $phid;
+      $evaluated_tokens = $this->evaluateFunction($name, array($argv));
+      if (!$evaluated_tokens) {
+        unset($results[$result_key]);
+      } else {
+        $is_first = true;
+        foreach ($evaluated_tokens as $phid) {
+          if ($is_first) {
+            $results[$result_key] = $phid;
+            $is_first = false;
+          } else {
+            $results[] = $phid;
+          }
+        }
       }
     }
 
+    $results = array_values($results);
     $results = $this->didEvaluateTokens($results);
 
     return $results;

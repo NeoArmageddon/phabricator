@@ -26,7 +26,7 @@ final class PhamePostArchiveController extends PhamePostController {
 
       $new_value = PhameConstants::VISIBILITY_ARCHIVED;
       $xactions[] = id(new PhamePostTransaction())
-        ->setTransactionType(PhamePostTransaction::TYPE_VISIBILITY)
+        ->setTransactionType(PhamePostVisibilityTransaction::TRANSACTIONTYPE)
         ->setNewValue($new_value);
 
       id(new PhamePostEditor())
@@ -42,8 +42,9 @@ final class PhamePostArchiveController extends PhamePostController {
 
     $title = pht('Archive Post');
     $body = pht(
-      'This post will revert to archived status and no longer be visible '.
-      'to other users or members of this blog.');
+      'If you archive this post, it will only be visible to users who can '.
+      'edit %s.',
+      $viewer->renderHandle($post->getBlogPHID()));
     $button = pht('Archive Post');
 
     return $this->newDialog()

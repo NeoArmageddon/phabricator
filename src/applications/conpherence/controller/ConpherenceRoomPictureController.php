@@ -76,7 +76,8 @@ final class ConpherenceRoomPictureController
 
         $xactions = array();
         $xactions[] = id(new ConpherenceTransaction())
-          ->setTransactionType(ConpherenceTransaction::TYPE_PICTURE)
+          ->setTransactionType(
+            ConpherenceThreadPictureTransaction::TRANSACTIONTYPE)
           ->setNewValue($new_value);
 
         $editor = id(new ConpherenceEditor())
@@ -131,7 +132,7 @@ final class ConpherenceRoomPictureController
       $button = javelin_tag(
         'button',
         array(
-          'class' => 'grey profile-image-button',
+          'class' => 'button-grey profile-image-button',
           'sigil' => 'has-tooltip',
           'meta' => array(
             'tip' => $spec['tip'],

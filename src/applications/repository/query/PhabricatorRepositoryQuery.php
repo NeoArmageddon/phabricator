@@ -12,6 +12,7 @@ final class PhabricatorRepositoryQuery
   private $uris;
   private $datasourceQuery;
   private $slugs;
+  private $almanacServicePHIDs;
 
   private $numericIdentifiers;
   private $callsignIdentifiers;
@@ -35,6 +36,7 @@ final class PhabricatorRepositoryQuery
   private $needCommitCounts;
   private $needProjectPHIDs;
   private $needURIs;
+  private $needProfileImage;
 
   public function withIDs(array $ids) {
     $this->ids = $ids;
@@ -134,6 +136,11 @@ final class PhabricatorRepositoryQuery
     return $this;
   }
 
+  public function withAlmanacServicePHIDs(array $phids) {
+    $this->almanacServicePHIDs = $phids;
+    return $this;
+  }
+
   public function needCommitCounts($need_counts) {
     $this->needCommitCounts = $need_counts;
     return $this;
@@ -151,6 +158,11 @@ final class PhabricatorRepositoryQuery
 
   public function needURIs($need_uris) {
     $this->needURIs = $need_uris;
+    return $this;
+  }
+
+  public function needProfileImage($need) {
+    $this->needProfileImage = $need;
     return $this;
   }
 
@@ -365,6 +377,36 @@ final class PhabricatorRepositoryQuery
       foreach ($repositories as $repository) {
         $repository_uris = idx($uri_groups, $repository->getPHID(), array());
         $repository->attachURIs($repository_uris);
+      }
+    }
+
+    if ($this->needProfileImage) {
+      $default = null;
+
+      $file_phids = mpull($repositories, 'getProfileImagePHID');
+      $file_phids = array_filter($file_phids);
+      if ($file_phids) {
+        $files = id(new PhabricatorFileQuery())
+          ->setParentQuery($this)
+          ->setViewer($this->getViewer())
+          ->withPHIDs($file_phids)
+          ->execute();
+        $files = mpull($files, null, 'getPHID');
+      } else {
+        $files = array();
+      }
+
+      foreach ($repositories as $repository) {
+        $file = idx($files, $repository->getProfileImagePHID());
+        if (!$file) {
+          if (!$default) {
+            $default = PhabricatorFile::loadBuiltin(
+              $this->getViewer(),
+              'repo/code.png');
+          }
+          $file = $default;
+        }
+        $repository->attachProfileImageFile($file);
       }
     }
 
@@ -657,6 +699,13 @@ final class PhabricatorRepositoryQuery
         $conn,
         'uri.repositoryURI IN (%Ls)',
         $try_uris);
+    }
+
+    if ($this->almanacServicePHIDs !== null) {
+      $where[] = qsprintf(
+        $conn,
+        'r.almanacServicePHID IN (%Ls)',
+        $this->almanacServicePHIDs);
     }
 
     return $where;

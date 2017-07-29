@@ -86,7 +86,17 @@ final class PhabricatorPeopleProfilePictureController
     $form = id(new PHUIFormLayoutView())
       ->setUser($viewer);
 
-    $default_image = PhabricatorFile::loadBuiltin($viewer, 'profile.png');
+    $default_image = $user->getDefaultProfileImagePHID();
+    if ($default_image) {
+      $default_image = id(new PhabricatorFileQuery())
+        ->setViewer($viewer)
+        ->withPHIDs(array($default_image))
+        ->executeOne();
+    }
+
+    if (!$default_image) {
+      $default_image = PhabricatorFile::loadBuiltin($viewer, 'profile.png');
+    }
 
     $images = array();
 
@@ -119,7 +129,7 @@ final class PhabricatorPeopleProfilePictureController
       'user7.png',
       'user8.png',
       'user9.png',
-      );
+    );
     foreach ($builtins as $builtin) {
       $file = PhabricatorFile::loadBuiltin($viewer, $builtin);
       $images[$file->getPHID()] = array(
@@ -173,10 +183,14 @@ final class PhabricatorPeopleProfilePictureController
 
     $buttons = array();
     foreach ($images as $phid => $spec) {
+      $style = null;
+      if (isset($spec['style'])) {
+        $style = $spec['style'];
+      }
       $button = javelin_tag(
         'button',
         array(
-          'class' => 'grey profile-image-button',
+          'class' => 'button-grey profile-image-button',
           'sigil' => 'has-tooltip',
           'meta' => array(
             'tip' => $spec['tip'],
@@ -256,14 +270,14 @@ final class PhabricatorPeopleProfilePictureController
     $crumbs->setBorder(true);
 
     $nav = $this->getProfileMenu();
-    $nav->selectFilter(PhabricatorPeopleProfilePanelEngine::PANEL_MANAGE);
+    $nav->selectFilter(PhabricatorPeopleProfileMenuEngine::ITEM_MANAGE);
 
-    $header = id(new PHUIHeaderView())
-      ->setHeader(pht('Edit Profile Picture'))
-      ->setHeaderIcon('fa-camera');
+    $header = $this->buildProfileHeader();
 
     $view = id(new PHUITwoColumnView())
       ->setHeader($header)
+      ->addClass('project-view-home')
+      ->addClass('project-view-people-home')
       ->setFooter(array(
         $form_box,
         $upload_box,

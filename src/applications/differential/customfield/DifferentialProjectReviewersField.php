@@ -42,28 +42,22 @@ final class DifferentialProjectReviewersField
       ->setReviewers($reviewers)
       ->setHandles($handles);
 
-    // TODO: Active diff stuff.
+    $diff = $this->getActiveDiff();
+    if ($diff) {
+      $view->setActiveDiff($diff);
+    }
 
     return $view;
   }
 
   private function getProjectReviewers() {
     $reviewers = array();
-    foreach ($this->getObject()->getReviewerStatus() as $reviewer) {
+    foreach ($this->getObject()->getReviewers() as $reviewer) {
       if (!$reviewer->isUser()) {
         $reviewers[] = $reviewer;
       }
     }
     return $reviewers;
-  }
-
-  public function getProTips() {
-    return array(
-      pht(
-        'You can add a project as a subscriber or reviewer by writing '.
-        '"%s" in the appropriate field.',
-        '#projectname'),
-    );
   }
 
 }

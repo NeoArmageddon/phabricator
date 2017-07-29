@@ -391,6 +391,10 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     return ($epoch - $window);
   }
 
+  public function getEndDateTimeEpochForCache() {
+    return $this->getEndDateTimeEpoch();
+  }
+
   protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
@@ -1024,6 +1028,10 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
 
     $set = new PhutilCalendarRecurrenceSet();
 
+    if ($this->viewerTimezone) {
+      $set->setViewerTimezone($this->viewerTimezone);
+    }
+
     $rrule = $this->newRecurrenceRule();
     if (!$rrule) {
       return null;
@@ -1178,9 +1186,8 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
    * @task markup
    */
   public function getMarkupFieldKey($field) {
-    $hash = PhabricatorHash::digest($this->getMarkupText($field));
-    $id = $this->getID();
-    return "calendar:T{$id}:{$field}:{$hash}";
+    $content = $this->getMarkupText($field);
+    return PhabricatorMarkupEngine::digestRemarkupContent($this, $content);
   }
 
 
@@ -1339,7 +1346,21 @@ final class PhabricatorCalendarEvent extends PhabricatorCalendarDAO
     PhabricatorDestructionEngine $engine) {
 
     $this->openTransaction();
-    $this->delete();
+      $invitees = id(new PhabricatorCalendarEventInvitee())->loadAllWhere(
+        'eventPHID = %s',
+        $this->getPHID());
+      foreach ($invitees as $invitee) {
+        $invitee->delete();
+      }
+
+      $notifications = id(new PhabricatorCalendarNotification())->loadAllWhere(
+        'eventPHID = %s',
+        $this->getPHID());
+      foreach ($notifications as $notification) {
+        $notification->delete();
+      }
+
+      $this->delete();
     $this->saveTransaction();
   }
 

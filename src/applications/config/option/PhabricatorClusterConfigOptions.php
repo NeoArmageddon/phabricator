@@ -20,7 +20,7 @@ final class PhabricatorClusterConfigOptions
   }
 
   public function getOptions() {
-    $databases_type = 'custom:PhabricatorClusterDatabasesConfigOptionType';
+    $databases_type = 'cluster.databases';
     $databases_help = $this->deformat(pht(<<<EOTEXT
 WARNING: This is a prototype option and the description below is currently pure
 fantasy.
@@ -37,6 +37,17 @@ EOTEXT
 
     $intro_href = PhabricatorEnv::getDoclink('Clustering Introduction');
     $intro_name = pht('Clustering Introduction');
+
+    $search_type = 'cluster.search';
+    $search_help = $this->deformat(pht(<<<EOTEXT
+Define one or more fulltext storage services. Here you can configure which
+hosts will handle fulltext search queries and indexing. For help with
+configuring fulltext search clusters, see **[[ %s | %s ]]** in the
+documentation.
+EOTEXT
+    ,
+    PhabricatorEnv::getDoclink('Cluster: Search'),
+    pht('Cluster: Search')));
 
     return array(
       $this->newOption('cluster.addresses', 'list<string>', array())
@@ -114,6 +125,21 @@ EOTEXT
         ->setSummary(
           pht('Configure database read replicas.'))
         ->setDescription($databases_help),
+      $this->newOption('cluster.search', $search_type, array())
+        ->setLocked(true)
+        ->setSummary(
+          pht('Configure full-text search services.'))
+        ->setDescription($search_help)
+        ->setDefault(
+          array(
+            array(
+              'type' => 'mysql',
+              'roles' => array(
+                'read' => true,
+                'write' => true,
+              ),
+            ),
+          )),
     );
   }
 

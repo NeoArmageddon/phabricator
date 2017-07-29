@@ -11,7 +11,7 @@ final class PhabricatorPhameApplication extends PhabricatorApplication {
   }
 
   public function getIcon() {
-    return 'fa-star';
+    return 'fa-feed';
   }
 
   public function getShortDescription() {
@@ -92,7 +92,6 @@ final class PhabricatorPhameApplication extends PhabricatorApplication {
       '/' => array(
         '' => 'PhameBlogViewController',
         'post/(?P<id>\d+)/(?:(?P<slug>[^/]+)/)?' => 'PhamePostViewController',
-        '.*' => 'PhameBlog404Controller',
       ),
 
     );

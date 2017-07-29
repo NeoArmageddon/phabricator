@@ -340,6 +340,9 @@ final class PhabricatorMetaMTAMail
     return $this->save();
   }
 
+  /**
+   * @return this
+   */
   public function save() {
     if ($this->getID()) {
       return parent::save();
@@ -369,15 +372,15 @@ final class PhabricatorMetaMTAMail
       }
       $editor->save();
 
-      // Queue a task to send this mail.
-      $mailer_task = PhabricatorWorker::scheduleTask(
-        'PhabricatorMetaMTAWorker',
-        $this->getID(),
-        array(
-          'priority' => PhabricatorWorker::PRIORITY_ALERTS,
-        ));
-
     $this->saveTransaction();
+
+    // Queue a task to send this mail.
+    $mailer_task = PhabricatorWorker::scheduleTask(
+      'PhabricatorMetaMTAWorker',
+      $this->getID(),
+      array(
+        'priority' => PhabricatorWorker::PRIORITY_ALERTS,
+      ));
 
     return $result;
   }
@@ -949,6 +952,16 @@ final class PhabricatorMetaMTAMail
         $actors[$phid]->setUndeliverable(
           PhabricatorMetaMTAActor::REASON_MAIL_DISABLED);
       }
+    }
+
+    // Unless delivery was forced earlier (password resets, confirmation mail),
+    // never send mail to unverified addresses.
+    foreach ($actors as $phid => $actor) {
+      if ($actor->getIsVerified()) {
+        continue;
+      }
+
+      $actor->setUndeliverable(PhabricatorMetaMTAActor::REASON_UNVERIFIED);
     }
 
     return $actors;

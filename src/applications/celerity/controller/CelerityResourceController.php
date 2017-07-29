@@ -103,9 +103,31 @@ abstract class CelerityResourceController extends PhabricatorController {
       }
     }
 
-    $response = new AphrontFileResponse();
-    $response->setContent($data);
-    $response->setMimeType($type_map[$type]);
+    $response = id(new AphrontFileResponse())
+      ->setMimeType($type_map[$type]);
+
+    $range = AphrontRequest::getHTTPHeader('Range');
+
+    if (strlen($range)) {
+      $response->setContentLength(strlen($data));
+
+      list($range_begin, $range_end) = $response->parseHTTPRange($range);
+
+      if ($range_begin !== null) {
+        if ($range_end !== null) {
+          $data = substr($data, $range_begin, ($range_end - $range_begin));
+        } else {
+          $data = substr($data, $range_begin);
+        }
+      }
+
+      $response->setContentIterator(array($data));
+    } else {
+      $response
+        ->setContent($data)
+        ->setCompressResponse(true);
+    }
+
 
     // NOTE: This is a piece of magic required to make WOFF fonts work in
     // Firefox and IE. Possibly we should generalize this more.

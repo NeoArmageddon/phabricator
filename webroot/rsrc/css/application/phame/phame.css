@@ -23,12 +23,12 @@
   display: inline-block;
   background-repeat: no-repeat;
   background-size: 100%;
-  box-shadow: inset 0 0 0 1px rgba({$alphagrey},.15);
   width: 40px;
   height: 40px;
   border-radius: 3px;
   position: absolute;
 }
+
 
 .phame-blog-description + .phui-document-view-pro-box {
   border-top: 1px solid rgba({$alphablue}, 0.20);
@@ -39,11 +39,11 @@
 }
 
 .phame-home-view .phui-side-column {
-  background-color: #fff;
+  background-color: {$page.content};
 }
 
 .phame-home-view {
-  background-color: #fff;
+  background-color: {$page.content};
   border-bottom: 1px solid rgba({$alphagrey},.1);
 }
 
@@ -98,7 +98,6 @@
   display: inline-block;
   background-repeat: no-repeat;
   background-size: 100%;
-  box-shadow: inset 0 0 0 1px rgba({$alphagrey},.15);
   width: 24px;
   height: 24px;
   border-radius: 3px;
@@ -141,14 +140,13 @@
 .phame-next-post-view {
   margin: 0 auto;
   padding: 12px 0;
-  font-family: 'Aleo', {$fontfamily};
 }
 
 .phame-next {
   width: 360px;
   float: right;
   text-align: right;
-  color: #000;
+  color: {$blacktext};
   position: relative;
 }
 
@@ -182,7 +180,7 @@
   width: 360px;
   float: left;
   text-align: left;
-  color: #000;
+  color: {$blacktext};
   position: relative;
 }
 
@@ -253,14 +251,16 @@
 
 /* Blog Chrome */
 .phame-live-view .phui-crumbs-view {
-  background: #fff;
   border: none;
-  padding-left: 8px;
+  width: 960px;
+  margin: 0 auto;
+  padding: 4px 0;
 }
 
 /* Hero Image */
 .phame-header-hero {
-  background-color: #fff;
+  background-color: {$page.content};
+  margin-top: 16px;
 }
 
 .phame-header-image {
@@ -282,7 +282,7 @@
 .phame-mega-header {
   margin: 0 auto;
   text-align: center;
-  background: #fff;
+  background: {$page.content};
   padding: 16px 0 24px;
 }
 
@@ -291,10 +291,9 @@
 }
 
 .phame-mega-header .phame-header-title {
-  color: #000;
+  color: {$blacktext};
   font-size: 28px;
   font-weight: bold;
-  font-family: 'Aleo', {$fontfamily};
   padding-top: 24px;
 }
 
@@ -305,7 +304,6 @@
 .phame-mega-header .phame-header-subtitle {
   color: {$greytext};
   font-size: 20px;
-  font-family: 'Aleo', {$fontfamily};
   padding-top: 8px;
 }
 

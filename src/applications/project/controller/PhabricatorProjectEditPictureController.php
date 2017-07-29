@@ -23,8 +23,7 @@ final class PhabricatorProjectEditPictureController
 
     $this->setProject($project);
 
-    $edit_uri = $this->getApplicationURI('profile/'.$project->getID().'/');
-    $view_uri = $this->getApplicationURI('profile/'.$project->getID().'/');
+    $manage_uri = $this->getApplicationURI('manage/'.$project->getID().'/');
 
     $supported_formats = PhabricatorFile::getTransformableImageFormats();
     $e_file = true;
@@ -78,7 +77,8 @@ final class PhabricatorProjectEditPictureController
 
         $xactions = array();
         $xactions[] = id(new PhabricatorProjectTransaction())
-          ->setTransactionType(PhabricatorProjectTransaction::TYPE_IMAGE)
+          ->setTransactionType(
+              PhabricatorProjectImageTransaction::TRANSACTIONTYPE)
           ->setNewValue($new_value);
 
         $editor = id(new PhabricatorProjectTransactionEditor())
@@ -89,7 +89,7 @@ final class PhabricatorProjectEditPictureController
 
         $editor->applyTransactions($project, $xactions);
 
-        return id(new AphrontRedirectResponse())->setURI($edit_uri);
+        return id(new AphrontRedirectResponse())->setURI($manage_uri);
       }
     }
 
@@ -98,7 +98,10 @@ final class PhabricatorProjectEditPictureController
     $form = id(new PHUIFormLayoutView())
       ->setUser($viewer);
 
-    $default_image = PhabricatorFile::loadBuiltin($viewer, 'project.png');
+    $builtin = PhabricatorProjectIconSet::getIconImage(
+      $project->getIcon());
+    $default_image = PhabricatorFile::loadBuiltin($this->getViewer(),
+      'projects/'.$builtin);
 
     $images = array();
 
@@ -121,9 +124,47 @@ final class PhabricatorProjectEditPictureController
       }
     }
 
+    $builtins = array(
+      'projects/v3/book.png',
+      'projects/v3/bug.png',
+      'projects/v3/calendar.png',
+      'projects/v3/clipboard.png',
+      'projects/v3/cloud.png',
+      'projects/v3/creditcard.png',
+      'projects/v3/database.png',
+      'projects/v3/desktop.png',
+      'projects/v3/experimental.png',
+      'projects/v3/flag.png',
+      'projects/v3/folder.png',
+      'projects/v3/lightbulb.png',
+      'projects/v3/lock.png',
+      'projects/v3/mail.png',
+      'projects/v3/marker.png',
+      'projects/v3/mobile.png',
+      'projects/v3/organization.png',
+      'projects/v3/people.png',
+      'projects/v3/piechart.png',
+      'projects/v3/robot.png',
+      'projects/v3/rocket.png',
+      'projects/v3/servers.png',
+      'projects/v3/sitemap.png',
+      'projects/v3/tag.png',
+      'projects/v3/trash.png',
+      'projects/v3/truck.png',
+      'projects/v3/umbrella.png',
+    );
+
+    foreach ($builtins as $builtin) {
+      $file = PhabricatorFile::loadBuiltin($viewer, $builtin);
+      $images[$file->getPHID()] = array(
+        'uri' => $file->getBestURI(),
+        'tip' => pht('Builtin Image'),
+      );
+    }
+
     $images[PhabricatorPHIDConstants::PHID_VOID] = array(
       'uri' => $default_image->getBestURI(),
-      'tip' => pht('No Picture'),
+      'tip' => pht('Default Picture'),
     );
 
     require_celerity_resource('people-profile-css');
@@ -134,7 +175,7 @@ final class PhabricatorProjectEditPictureController
       $button = javelin_tag(
         'button',
         array(
-          'class' => 'grey profile-image-button',
+          'class' => 'button-grey profile-image-button',
           'sigil' => 'has-tooltip',
           'meta' => array(
             'tip' => $spec['tip'],
@@ -200,7 +241,7 @@ final class PhabricatorProjectEditPictureController
     $compose_button = javelin_tag(
       'button',
       array(
-        'class' => 'grey',
+        'class' => 'button-grey',
         'id' => $launch_id,
         'sigil' => 'icon-composer',
       ),
@@ -227,7 +268,7 @@ final class PhabricatorProjectEditPictureController
 
     $form->appendChild(
       id(new AphrontFormMarkupControl())
-        ->setLabel(pht('Quick Create'))
+        ->setLabel(pht('Custom'))
         ->setValue($compose_form));
 
     $upload_form = id(new AphrontFormView())
@@ -242,7 +283,7 @@ final class PhabricatorProjectEditPictureController
             pht('Supported formats: %s', implode(', ', $supported_formats))))
       ->appendChild(
         id(new AphrontFormSubmitControl())
-          ->addCancelButton($edit_uri)
+          ->addCancelButton($manage_uri)
           ->setValue(pht('Upload Picture')));
 
     $form_box = id(new PHUIObjectBoxView())
@@ -255,7 +296,7 @@ final class PhabricatorProjectEditPictureController
       ->setForm($upload_form);
 
     $nav = $this->getProfileMenu();
-    $nav->selectFilter(PhabricatorProject::PANEL_MANAGE);
+    $nav->selectFilter(PhabricatorProject::ITEM_MANAGE);
 
     return $this->newPage()
       ->setTitle($title)
@@ -285,7 +326,7 @@ final class PhabricatorProjectEditPictureController
     $default_button = javelin_tag(
       'button',
       array(
-        'class' => 'grey profile-image-button',
+        'class' => 'button-grey profile-image-button',
         'sigil' => 'has-tooltip',
         'meta' => array(
           'tip' => pht('Use Icon and Color'),

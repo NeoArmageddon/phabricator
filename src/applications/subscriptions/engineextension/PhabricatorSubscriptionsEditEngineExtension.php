@@ -4,6 +4,11 @@ final class PhabricatorSubscriptionsEditEngineExtension
   extends PhabricatorEditEngineExtension {
 
   const EXTENSIONKEY = 'subscriptions.subscribers';
+  const FIELDKEY = 'subscriberPHIDs';
+
+  const EDITKEY_ADD = 'subscribers.add';
+  const EDITKEY_SET = 'subscribers.set';
+  const EDITKEY_REMOVE = 'subscribers.remove';
 
   public function getExtensionPriority() {
     return 750;
@@ -38,7 +43,7 @@ final class PhabricatorSubscriptionsEditEngineExtension
     }
 
     $subscribers_field = id(new PhabricatorSubscribersEditField())
-      ->setKey('subscriberPHIDs')
+      ->setKey(self::FIELDKEY)
       ->setLabel(pht('Subscribers'))
       ->setEditTypeKey('subscribers')
       ->setAliases(array('subscriber', 'subscribers'))
@@ -52,14 +57,14 @@ final class PhabricatorSubscriptionsEditEngineExtension
 
     $subscribers_field->setViewer($engine->getViewer());
 
-    $edit_add = $subscribers_field->getConduitEditType('subscribers.add')
+    $edit_add = $subscribers_field->getConduitEditType(self::EDITKEY_ADD)
       ->setConduitDescription(pht('Add subscribers.'));
 
-    $edit_set = $subscribers_field->getConduitEditType('subscribers.set')
+    $edit_set = $subscribers_field->getConduitEditType(self::EDITKEY_SET)
       ->setConduitDescription(
         pht('Set subscribers, overwriting current value.'));
 
-    $edit_rem = $subscribers_field->getConduitEditType('subscribers.remove')
+    $edit_rem = $subscribers_field->getConduitEditType(self::EDITKEY_REMOVE)
       ->setConduitDescription(pht('Remove subscribers.'));
 
     return array(

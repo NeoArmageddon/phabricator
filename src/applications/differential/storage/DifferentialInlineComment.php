@@ -255,13 +255,20 @@ final class DifferentialInlineComment
     return $this;
   }
 
+  public function getDateModified() {
+    return $this->proxy->getDateModified();
+  }
+
+  public function getDateCreated() {
+    return $this->proxy->getDateCreated();
+  }
 
 /* -(  PhabricatorMarkupInterface Implementation  )-------------------------- */
 
 
   public function getMarkupFieldKey($field) {
-    // We can't use ID because synthetic comments don't have it.
-    return 'DI:'.PhabricatorHash::digest($this->getContent());
+    $content = $this->getMarkupText($field);
+    return PhabricatorMarkupEngine::digestRemarkupContent($this, $content);
   }
 
   public function newMarkupEngine($field) {

@@ -4,7 +4,7 @@ abstract class PhabricatorFileUploadSource
   extends Phobject {
 
   private $name;
-  private $ttl;
+  private $relativeTTL;
   private $viewPolicy;
 
   private $rope;
@@ -22,13 +22,13 @@ abstract class PhabricatorFileUploadSource
     return $this->name;
   }
 
-  public function setTTL($ttl) {
-    $this->ttl = $ttl;
+  public function setRelativeTTL($relative_ttl) {
+    $this->relativeTTL = $relative_ttl;
     return $this;
   }
 
-  public function getTTL() {
-    return $this->ttl;
+  public function getRelativeTTL() {
+    return $this->relativeTTL;
   }
 
   public function setViewPolicy($view_policy) {
@@ -137,10 +137,6 @@ abstract class PhabricatorFileUploadSource
 
     $parameters = $this->getNewFileParameters();
 
-    $parameters = array(
-      'isPartial' => true,
-    ) + $parameters;
-
     $data_length = $this->getDataLength();
     if ($data_length !== null) {
       $length = $data_length;
@@ -149,7 +145,7 @@ abstract class PhabricatorFileUploadSource
     }
 
     $file = PhabricatorFile::newChunkedFile($engine, $length, $parameters);
-    $file->save();
+    $file->saveAndIndex();
 
     $rope = $this->getRope();
 
@@ -190,12 +186,18 @@ abstract class PhabricatorFileUploadSource
     $actual_length = strlen($data);
     $rope->removeBytesFromHead($actual_length);
 
-    $chunk_data = PhabricatorFile::newFromFileData(
-      $data,
-      array(
-        'name' => $file->getMonogram().'.chunk-'.$offset,
-        'viewPolicy' => PhabricatorPolicies::POLICY_NOONE,
-      ));
+    $params = array(
+      'name' => $file->getMonogram().'.chunk-'.$offset,
+      'viewPolicy' => PhabricatorPolicies::POLICY_NOONE,
+    );
+
+    // If this isn't the initial chunk, provide a dummy MIME type so we do not
+    // try to detect it. See T12857.
+    if ($offset > 0) {
+      $params['mime-type'] = 'application/octet-stream';
+    }
+
+    $chunk_data = PhabricatorFile::newFromFileData($data, $params);
 
     $chunk = PhabricatorFileChunk::initializeNewChunk(
       $file->getStorageHandle(),
@@ -212,11 +214,17 @@ abstract class PhabricatorFileUploadSource
   }
 
   private function getNewFileParameters() {
-    return array(
+    $parameters = array(
       'name' => $this->getName(),
-      'ttl' => $this->getTTL(),
       'viewPolicy' => $this->getViewPolicy(),
     );
+
+    $ttl = $this->getRelativeTTL();
+    if ($ttl !== null) {
+      $parameters['ttl.relative'] = $ttl;
+    }
+
+    return $parameters;
   }
 
   private function getChunkEngine() {

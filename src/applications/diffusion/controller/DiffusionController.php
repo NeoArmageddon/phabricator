@@ -44,6 +44,7 @@ abstract class DiffusionController extends PhabricatorController {
   private function loadContext(array $options) {
     $request = $this->getRequest();
     $viewer = $this->getViewer();
+    require_celerity_resource('diffusion-repository-css');
 
     $identifier = $this->getRepositoryIdentifierFromRequest($request);
 
@@ -122,10 +123,10 @@ abstract class DiffusionController extends PhabricatorController {
   private function buildCrumbList(array $spec = array()) {
 
     $spec = $spec + array(
-      'commit'  => null,
-      'tags'    => null,
-      'branches'    => null,
-      'view'    => null,
+      'commit' => null,
+      'tags' => null,
+      'branches' => null,
+      'view' => null,
     );
 
     $crumb_list = array();
@@ -204,6 +205,9 @@ abstract class DiffusionController extends PhabricatorController {
       case 'history':
         $view_name = pht('History');
         break;
+      case 'graph':
+        $view_name = pht('Graph');
+        break;
       case 'browse':
         $view_name = pht('Browse');
         break;
@@ -212,6 +216,9 @@ abstract class DiffusionController extends PhabricatorController {
         break;
       case 'change':
         $view_name = pht('Change');
+        break;
+      case 'compare':
+        $view_name = pht('Compare');
         break;
     }
 
@@ -234,6 +241,18 @@ abstract class DiffusionController extends PhabricatorController {
       $drequest,
       $method,
       $params);
+  }
+
+  protected function callConduitMethod($method, array $params = array()) {
+    $user = $this->getViewer();
+    $drequest = $this->getDiffusionRequest();
+
+    return DiffusionQuery::callConduitWithDiffusionRequest(
+      $user,
+      $drequest,
+      $method,
+      $params,
+      true);
   }
 
   protected function getRepositoryControllerURI(
@@ -296,16 +315,10 @@ abstract class DiffusionController extends PhabricatorController {
 
   protected function renderStatusMessage($title, $body) {
     return id(new PHUIInfoView())
-      ->setSeverity(PHUIInfoView::SEVERITY_WARNING)
+      ->setSeverity(PHUIInfoView::SEVERITY_NOTICE)
       ->setTitle($title)
       ->setFlush(true)
       ->appendChild($body);
-  }
-
-  protected function renderTablePagerBox(PHUIPagerView $pager) {
-    return id(new PHUIBoxView())
-      ->addMargin(PHUI::MARGIN_LARGE)
-      ->appendChild($pager);
   }
 
   protected function renderCommitHashTag(DiffusionRequest $drequest) {
@@ -323,7 +336,8 @@ abstract class DiffusionController extends PhabricatorController {
 
     $tag = id(new PHUITagView())
       ->setName($commit)
-      ->setShade('indigo')
+      ->setColor(PHUITagView::COLOR_INDIGO)
+      ->setBorder(PHUITagView::BORDER_NONE)
       ->setType(PHUITagView::TYPE_SHADE);
 
     return $tag;
@@ -337,41 +351,133 @@ abstract class DiffusionController extends PhabricatorController {
 
     $drequest = $this->getDiffusionRequest();
     $viewer = $this->getViewer();
+    $repository = $drequest->getRepository();
+    $repository_phid = $repository->getPHID();
+    $stable_commit = $drequest->getStableCommit();
 
-    try {
-      $result = $this->callConduitWithDiffusionRequest(
-        'diffusion.filecontentquery',
-        array(
-          'path' => $readme_path,
-          'commit' => $drequest->getStableCommit(),
-        ));
-    } catch (Exception $ex) {
-      return null;
+    $stable_commit_hash = PhabricatorHash::digestForIndex($stable_commit);
+    $readme_path_hash = PhabricatorHash::digestForIndex($readme_path);
+
+    $cache = PhabricatorCaches::getMutableStructureCache();
+    $cache_key = "diffusion".
+      ".repository({$repository_phid})".
+      ".commit({$stable_commit_hash})".
+      ".readme({$readme_path_hash})";
+
+    $readme_cache = $cache->getKey($cache_key);
+    if (!$readme_cache) {
+      try {
+        $result = $this->callConduitWithDiffusionRequest(
+          'diffusion.filecontentquery',
+          array(
+            'path' => $readme_path,
+            'commit' => $drequest->getStableCommit(),
+          ));
+      } catch (Exception $ex) {
+        return null;
+      }
+
+      $file_phid = $result['filePHID'];
+      if (!$file_phid) {
+        return null;
+      }
+
+      $file = id(new PhabricatorFileQuery())
+        ->setViewer($viewer)
+        ->withPHIDs(array($file_phid))
+        ->executeOne();
+      if (!$file) {
+        return null;
+      }
+
+      $corpus = $file->loadFileData();
+
+      $readme_cache = array(
+        'corpus' => $corpus,
+      );
+
+      $cache->setKey($cache_key, $readme_cache);
     }
 
-    $file_phid = $result['filePHID'];
-    if (!$file_phid) {
-      return null;
-    }
-
-    $file = id(new PhabricatorFileQuery())
-      ->setViewer($viewer)
-      ->withPHIDs(array($file_phid))
-      ->executeOne();
-    if (!$file) {
-      return null;
-    }
-
-    $corpus = $file->loadFileData();
-
-    if (!strlen($corpus)) {
+    $readme_corpus = $readme_cache['corpus'];
+    if (!strlen($readme_corpus)) {
       return null;
     }
 
     return id(new DiffusionReadmeView())
       ->setUser($this->getViewer())
       ->setPath($readme_path)
-      ->setContent($corpus);
+      ->setContent($readme_corpus);
+  }
+
+  protected function buildTabsView($key) {
+    $drequest = $this->getDiffusionRequest();
+    $repository = $drequest->getRepository();
+
+    $view = new PHUIListView();
+
+    $view->addMenuItem(
+      id(new PHUIListItemView())
+        ->setKey('home')
+        ->setName(pht('Home'))
+        ->setIcon('fa-home')
+        ->setHref($drequest->generateURI(
+          array(
+            'action' => 'branch',
+            'path' => '/',
+          )))
+        ->setSelected($key == 'home'));
+
+    if (!$repository->isSVN()) {
+      $view->addMenuItem(
+        id(new PHUIListItemView())
+          ->setKey('branch')
+          ->setName(pht('Branches'))
+          ->setIcon('fa-code-fork')
+          ->setHref($drequest->generateURI(
+          array(
+            'action' => 'branches',
+          )))
+          ->setSelected($key == 'branch'));
+    }
+
+    if (!$repository->isSVN()) {
+      $view->addMenuItem(
+        id(new PHUIListItemView())
+          ->setKey('tags')
+          ->setName(pht('Tags'))
+          ->setIcon('fa-tags')
+          ->setHref($drequest->generateURI(
+          array(
+            'action' => 'tags',
+          )))
+          ->setSelected($key == 'tags'));
+    }
+
+    $view->addMenuItem(
+      id(new PHUIListItemView())
+        ->setKey('history')
+        ->setName(pht('History'))
+        ->setIcon('fa-history')
+        ->setHref($drequest->generateURI(
+        array(
+          'action' => 'history',
+        )))
+        ->setSelected($key == 'history'));
+
+    $view->addMenuItem(
+      id(new PHUIListItemView())
+        ->setKey('graph')
+        ->setName(pht('Graph'))
+        ->setIcon('fa-code-fork')
+        ->setHref($drequest->generateURI(
+        array(
+          'action' => 'graph',
+        )))
+        ->setSelected($key == 'graph'));
+
+    return $view;
+
   }
 
 }

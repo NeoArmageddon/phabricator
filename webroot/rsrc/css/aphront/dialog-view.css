@@ -3,11 +3,11 @@
  */
 
 .aphront-dialog-view {
-  width: 540px;
+  width: 560px;
   margin: 32px auto 16px;
   border: 1px solid {$lightblueborder};
   border-radius: 3px;
-  background-color: #fff;
+  background-color: {$page.content};
 }
 
 .jx-client-dialog .aphront-dialog-view {
@@ -32,7 +32,7 @@
 }
 
 .aphront-dialog-view-width-form {
-  width: 600px;
+  width: 640px;
 }
 
 .aphront-dialog-view-width-full {
@@ -41,7 +41,7 @@
 }
 
 .aphront-dialog-body {
-  background: #fff;
+  background: {$page.content};
   padding: 16px;
   border: none;
 }
@@ -158,18 +158,18 @@
   margin-top: 16px;
 }
 
-.device-desktop .aphront-dialog-flush .phui-object-item-list-view {
+.device-desktop .aphront-dialog-flush .phui-oi-list-view {
   margin: 0;
   padding: 0;
 }
 
-.aphront-dialog-flush .phui-object-item-list-view.phui-object-list-stackable
- .phui-object-item {
+.aphront-dialog-flush .phui-oi-list-view.phui-object-list-stackable
+ .phui-oi {
   border: 0;
 }
 
-.aphront-dialog-flush .phui-object-item-list-view.phui-object-list-stackable
- .phui-object-item-frame {
+.aphront-dialog-flush .phui-oi-list-view.phui-object-list-stackable
+ .phui-oi-frame {
   border: 0;
   border-top: 1px solid {$thinblueborder};
 }

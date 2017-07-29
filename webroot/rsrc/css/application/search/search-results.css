@@ -2,7 +2,7 @@
  * @provides phabricator-search-results-css
  */
 
-.phui-object-item-link strong {
+.phui-oi-link strong {
   color: {$fire};
   text-decoration: underline;
 }
@@ -14,5 +14,18 @@
 .phui-source-fragment strong {
   background-color: {$lightyellow};
   font-weight: normal;
-  color: #000;
+  color: {$blacktext};
+}
+
+.phui-fulltext-tokens {
+  margin: 16px 8px;
+  font-weight: bold;
+}
+
+.phui-fulltext-tokens .phui-tag-view {
+  margin: 0 2px;
+}
+
+.phui-fulltext-tokens .phui-tag-view.phui-tag-grey {
+  opacity: 0.5;
 }

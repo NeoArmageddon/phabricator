@@ -44,7 +44,7 @@ final class PhabricatorSessionsSettingsPanel extends PhabricatorSettingsPanel {
       ->withPHIDs($identity_phids)
       ->execute();
 
-    $current_key = PhabricatorHash::digest(
+    $current_key = PhabricatorHash::weakDigest(
       $request->getCookie(PhabricatorCookies::COOKIE_SESSION));
 
     $rows = array();
@@ -58,7 +58,7 @@ final class PhabricatorSessionsSettingsPanel extends PhabricatorSettingsPanel {
         $button = phutil_tag(
           'a',
           array(
-            'class' => 'small grey button disabled',
+            'class' => 'small button button-grey disabled',
           ),
           pht('Current'));
       } else {
@@ -67,7 +67,7 @@ final class PhabricatorSessionsSettingsPanel extends PhabricatorSettingsPanel {
           'a',
           array(
             'href' => '/auth/session/terminate/'.$session->getID().'/',
-            'class' => 'small grey button',
+            'class' => 'small button button-grey',
             'sigil' => 'workflow',
           ),
           pht('Terminate'));

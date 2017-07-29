@@ -25,6 +25,7 @@ abstract class PhabricatorEditField extends Phobject {
 
   private $commentActionLabel;
   private $commentActionValue;
+  private $commentActionGroupKey;
   private $commentActionOrder = 1000;
   private $hasCommentActionValue;
 
@@ -35,6 +36,7 @@ abstract class PhabricatorEditField extends Phobject {
   private $isEditDefaults;
   private $isSubmittedForm;
   private $controlError;
+  private $canApplyWithoutEditCapability = false;
 
   private $isReorderable = true;
   private $isDefaultable = true;
@@ -245,6 +247,15 @@ abstract class PhabricatorEditField extends Phobject {
     return $this->commentActionLabel;
   }
 
+  public function setCommentActionGroupKey($key) {
+    $this->commentActionGroupKey = $key;
+    return $this;
+  }
+
+  public function getCommentActionGroupKey() {
+    return $this->commentActionGroupKey;
+  }
+
   public function setCommentActionOrder($order) {
     $this->commentActionOrder = $order;
     return $this;
@@ -280,6 +291,15 @@ abstract class PhabricatorEditField extends Phobject {
 
   public function getControlInstructions() {
     return $this->controlInstructions;
+  }
+
+  public function setCanApplyWithoutEditCapability($can_apply) {
+    $this->canApplyWithoutEditCapability = $can_apply;
+    return $this;
+  }
+
+  public function getCanApplyWithoutEditCapability() {
+    return $this->canApplyWithoutEditCapability;
   }
 
   protected function newControl() {
@@ -719,7 +739,8 @@ abstract class PhabricatorEditField extends Phobject {
       ->setKey($this->getKey())
       ->setLabel($label)
       ->setValue($this->getValueForCommentAction($value))
-      ->setOrder($this->getCommentActionOrder());
+      ->setOrder($this->getCommentActionOrder())
+      ->setGroupKey($this->getCommentActionGroupKey());
 
     return $action;
   }

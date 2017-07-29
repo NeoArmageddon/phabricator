@@ -86,6 +86,36 @@ final class PhabricatorPolicyFilter extends Phobject {
     return (count($result) == 1);
   }
 
+  public static function canInteract(
+    PhabricatorUser $user,
+    PhabricatorPolicyInterface $object) {
+
+    $capabilities = $object->getCapabilities();
+    $capabilities = array_fuse($capabilities);
+
+    $can_interact = PhabricatorPolicyCapability::CAN_INTERACT;
+    $can_view = PhabricatorPolicyCapability::CAN_VIEW;
+
+    $require = array();
+
+    // If the object doesn't support a separate "Interact" capability, we
+    // only use the "View" capability: for most objects, you can interact
+    // with them if you can see them.
+    $require[] = $can_view;
+
+    if (isset($capabilities[$can_interact])) {
+      $require[] = $can_interact;
+    }
+
+    foreach ($require as $capability) {
+      if (!self::hasCapability($user, $object, $capability)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   public function setViewer(PhabricatorUser $user) {
     $this->viewer = $user;
     return $this;
@@ -122,6 +152,12 @@ final class PhabricatorPolicyFilter extends Phobject {
     if ($viewer->isOmnipotent()) {
       return $objects;
     }
+
+    // Before doing any actual object checks, make sure the viewer can see
+    // the applications that these objects belong to. This is normally enforced
+    // in the Query layer before we reach object filtering, but execution
+    // sometimes reaches policy filtering without running application checks.
+    $objects = $this->applyApplicationChecks($objects);
 
     $filtered = array();
     $viewer_phid = $viewer->getPHID();
@@ -862,6 +898,76 @@ final class PhabricatorPolicyFilter extends Phobject {
       ->setCapability(PhabricatorPolicyCapability::CAN_VIEW);
 
     throw $exception;
+  }
+
+  private function applyApplicationChecks(array $objects) {
+    $viewer = $this->viewer;
+
+    foreach ($objects as $key => $object) {
+      // Don't filter handles: users are allowed to see handles from an
+      // application they can't see even if they can not see objects from
+      // that application. Note that the application policies still apply to
+      // the underlying object, so these will be "Restricted Object" handles.
+
+      // If we don't let these through, PhabricatorHandleQuery will completely
+      // fail to load results for PHIDs that are part of applications which
+      // the viewer can not see, but a fundamental property of handles is that
+      // we always load something and they can safely be assumed to load.
+      if ($object instanceof PhabricatorObjectHandle) {
+        continue;
+      }
+
+      $phid = $object->getPHID();
+      if (!$phid) {
+        continue;
+      }
+
+      $application_class = $this->getApplicationForPHID($phid);
+      if ($application_class === null) {
+        continue;
+      }
+
+      $can_see = PhabricatorApplication::isClassInstalledForViewer(
+        $application_class,
+        $viewer);
+      if ($can_see) {
+        continue;
+      }
+
+      unset($objects[$key]);
+
+      $application = newv($application_class, array());
+      $this->rejectObject(
+        $application,
+        $application->getPolicy(PhabricatorPolicyCapability::CAN_VIEW),
+        PhabricatorPolicyCapability::CAN_VIEW);
+    }
+
+    return $objects;
+  }
+
+  private function getApplicationForPHID($phid) {
+    static $class_map = array();
+
+    $phid_type = phid_get_type($phid);
+    if (!isset($class_map[$phid_type])) {
+      $type_objects = PhabricatorPHIDType::getTypes(array($phid_type));
+      $type_object = idx($type_objects, $phid_type);
+      if (!$type_object) {
+        $class = false;
+      } else {
+        $class = $type_object->getPHIDTypeApplicationClass();
+      }
+
+      $class_map[$phid_type] = $class;
+    }
+
+    $class = $class_map[$phid_type];
+    if ($class === false) {
+      return null;
+    }
+
+    return $class;
   }
 
 }

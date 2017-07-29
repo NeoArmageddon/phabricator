@@ -48,6 +48,7 @@ body {
   text-align: left;
   unicode-bidi: embed;
   background: {$page.background};
+  color: {$blacktext};
 
   /* By default, the iPhone zooms all text on the page by some percentage when
      you rotate from portrait mode to landscape mode. Disable this, since it
@@ -84,7 +85,7 @@ a {
   cursor: pointer;
 }
 
-a:hover {
+.device-desktop a:hover {
   text-decoration: underline;
 }
 
@@ -172,4 +173,17 @@ hr {
   left: 0;
   height: 2px;
   background: {$sky};
+}
+
+.clipboard-copy {
+  visibility: hidden;
+}
+
+.supports-clipboard .clipboard-copy {
+  visibility: visible;
+}
+
+.clipboard-buffer {
+  position: absolute;
+  left: -9999px;
 }

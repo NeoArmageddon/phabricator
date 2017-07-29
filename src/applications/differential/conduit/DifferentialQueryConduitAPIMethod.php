@@ -11,6 +11,16 @@ final class DifferentialQueryConduitAPIMethod
     return pht('Query Differential revisions which match certain criteria.');
   }
 
+  public function getMethodStatus() {
+    return self::METHOD_STATUS_FROZEN;
+  }
+
+  public function getMethodStatusDescription() {
+    return pht(
+      'This method is frozen and will eventually be deprecated. New code '.
+      'should use "differential.revision.search" instead.');
+  }
+
   protected function defineParamTypes() {
     $hash_types = ArcanistDifferentialRevisionHash::getTypes();
     $hash_const = $this->formatStringConstants($hash_types);
@@ -172,7 +182,7 @@ final class DifferentialQueryConduitAPIMethod
       $query->withBranches($branches);
     }
 
-    $query->needRelationships(true);
+    $query->needReviewers(true);
     $query->needCommitPHIDs(true);
     $query->needDiffIDs(true);
     $query->needActiveDiffs(true);
@@ -183,6 +193,14 @@ final class DifferentialQueryConduitAPIMethod
     $field_data = $this->loadCustomFieldsForRevisions(
       $request->getUser(),
       $revisions);
+
+    if ($revisions) {
+      $ccs = id(new PhabricatorSubscribersQuery())
+        ->withObjectPHIDs(mpull($revisions, 'getPHID'))
+        ->execute();
+    } else {
+      $ccs = array();
+    }
 
     $results = array();
     foreach ($revisions as $revision) {
@@ -214,8 +232,8 @@ final class DifferentialQueryConduitAPIMethod
         'activeDiffPHID'      => $diff->getPHID(),
         'diffs'               => $revision->getDiffIDs(),
         'commits'             => $revision->getCommitPHIDs(),
-        'reviewers'           => array_values($revision->getReviewers()),
-        'ccs'                 => array_values($revision->getCCPHIDs()),
+        'reviewers'           => $revision->getReviewerPHIDs(),
+        'ccs'                 => idx($ccs, $phid, array()),
         'hashes'              => $revision->getHashes(),
         'auxiliary'           => idx($field_data, $phid, array()),
         'repositoryPHID'      => $diff->getRepositoryPHID(),

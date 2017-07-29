@@ -1,7 +1,7 @@
 <?php
 
 final class PhabricatorAuditTransaction
-  extends PhabricatorApplicationTransaction {
+  extends PhabricatorModularTransaction {
 
   const TYPE_COMMIT = 'audit:commit';
 
@@ -18,6 +18,10 @@ final class PhabricatorAuditTransaction
 
   public function getApplicationName() {
     return 'audit';
+  }
+
+  public function getBaseTransactionClass() {
+    return 'DiffusionCommitTransactionType';
   }
 
   public function getApplicationTransactionType() {
@@ -43,6 +47,17 @@ final class PhabricatorAuditTransaction
     }
 
     return $blocks;
+  }
+
+  public function getActionStrength() {
+    $type = $this->getTransactionType();
+
+    switch ($type) {
+      case self::TYPE_COMMIT:
+        return 3.0;
+    }
+
+    return parent::getActionStrength();
   }
 
   public function getRequiredHandlePHIDs() {
@@ -434,6 +449,18 @@ final class PhabricatorAuditTransaction
   public function getMailTags() {
     $tags = array();
     switch ($this->getTransactionType()) {
+      case DiffusionCommitAcceptTransaction::TRANSACTIONTYPE:
+        $tags[] = self::MAILTAG_ACTION_ACCEPT;
+        break;
+      case DiffusionCommitConcernTransaction::TRANSACTIONTYPE:
+        $tags[] = self::MAILTAG_ACTION_CONCERN;
+        break;
+      case DiffusionCommitResignTransaction::TRANSACTIONTYPE:
+        $tags[] = self::MAILTAG_ACTION_RESIGN;
+        break;
+      case DiffusionCommitAuditorsTransaction::TRANSACTIONTYPE:
+        $tags[] = self::MAILTAG_ADD_AUDITORS;
+        break;
       case PhabricatorAuditActionConstants::ACTION:
         switch ($this->getNewValue()) {
           case PhabricatorAuditActionConstants::CONCERN:
@@ -482,4 +509,22 @@ final class PhabricatorAuditTransaction
     }
     return $tags;
   }
+
+  public function shouldDisplayGroupWith(array $group) {
+    // Make the "This commit now requires audit." state message stand alone.
+    $type_state = DiffusionCommitStateTransaction::TRANSACTIONTYPE;
+
+    if ($this->getTransactionType() == $type_state) {
+      return false;
+    }
+
+    foreach ($group as $xaction) {
+      if ($xaction->getTransactionType() == $type_state) {
+        return false;
+      }
+    }
+
+    return parent::shouldDisplayGroupWith($group);
+  }
+
 }

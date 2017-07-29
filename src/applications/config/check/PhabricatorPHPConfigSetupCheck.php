@@ -14,7 +14,7 @@ final class PhabricatorPHPConfigSetupCheck extends PhabricatorSetupCheck {
   protected function executeChecks() {
 
     if (empty($_SERVER['REMOTE_ADDR'])) {
-      $doc_href = PhabricatorEnv::getDocLink('Configuring a Preamble Script');
+      $doc_href = PhabricatorEnv::getDoclink('Configuring a Preamble Script');
 
       $summary = pht(
         'You likely need to fix your preamble script so '.
@@ -40,7 +40,13 @@ final class PhabricatorPHPConfigSetupCheck extends PhabricatorSetupCheck {
         ->setMessage($message);
     }
 
-    $raw_post_data = (int)ini_get('always_populate_raw_post_data');
+    if (version_compare(phpversion(), '7', '>=')) {
+      // This option was removed in PHP7.
+      $raw_post_data = -1;
+    } else {
+      $raw_post_data = (int)ini_get('always_populate_raw_post_data');
+    }
+
     if ($raw_post_data != -1) {
       $summary = pht(
         'PHP setting "%s" should be set to "-1" to avoid deprecation '.

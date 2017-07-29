@@ -121,8 +121,18 @@ final class PhabricatorMySQLSetupCheck extends PhabricatorSetupCheck {
         ->addMySQLConfig('sql_mode');
     }
 
-    $stopword_file = $ref->loadRawMySQLConfigValue('ft_stopword_file');
+    $is_innodb_fulltext = false;
+    $is_myisam_fulltext = false;
     if ($this->shouldUseMySQLSearchEngine()) {
+      if (PhabricatorSearchDocument::isInnoDBFulltextEngineAvailable()) {
+        $is_innodb_fulltext = true;
+      } else {
+        $is_myisam_fulltext = true;
+      }
+    }
+
+    if ($is_myisam_fulltext) {
+      $stopword_file = $ref->loadRawMySQLConfigValue('ft_stopword_file');
       if ($stopword_file === null) {
         $summary = pht(
           'Your version of MySQL (on database host "%s") does not support '.
@@ -135,7 +145,7 @@ final class PhabricatorMySQLSetupCheck extends PhabricatorSetupCheck {
           "be able to find search results for common words. You can gain ".
           "access to this option by upgrading MySQL to a more recent ".
           "version.\n\n".
-          "You can ignore this warning if you plan to configure ElasticSearch ".
+          "You can ignore this warning if you plan to configure Elasticsearch ".
           "later, or aren't concerned about searching for common words.",
           $host_name,
           phutil_tag('tt', array(), 'ft_stopword_file'));
@@ -170,7 +180,7 @@ final class PhabricatorMySQLSetupCheck extends PhabricatorSetupCheck {
           "To make search more useful, you can use an alternate stopword ".
           "file with fewer words. Alternatively, if you aren't concerned ".
           "about searching for common words, you can ignore this warning. ".
-          "If you later plan to configure ElasticSearch, you can also ignore ".
+          "If you later plan to configure Elasticsearch, you can also ignore ".
           "this warning: this stopword file only affects MySQL fulltext ".
           "indexes.\n\n".
           "To choose a different stopword file, add this to your %s file ".
@@ -200,9 +210,9 @@ final class PhabricatorMySQLSetupCheck extends PhabricatorSetupCheck {
       }
     }
 
-    $min_len = $ref->loadRawMySQLConfigValue('ft_min_word_len');
-    if ($min_len >= 4) {
-      if ($this->shouldUseMySQLSearchEngine()) {
+    if ($is_myisam_fulltext) {
+      $min_len = $ref->loadRawMySQLConfigValue('ft_min_word_len');
+      if ($min_len >= 4) {
         $namespace = PhabricatorEnv::getEnvConfig('storage.default-namespace');
 
         $summary = pht(
@@ -221,7 +231,7 @@ final class PhabricatorMySQLSetupCheck extends PhabricatorSetupCheck {
           "You can change this setting to 3 to allow these words to be ".
           "indexed. Alternatively, you can ignore this warning if you are ".
           "not concerned about searching for 3-letter words. If you later ".
-          "plan to configure ElasticSearch, you can also ignore this warning: ".
+          "plan to configure Elasticsearch, you can also ignore this warning: ".
           "only MySQL fulltext search is affected.\n\n".
           "To reduce the minimum word length to 3, add this to your %s file ".
           "(in the %s section) and then restart %s:\n\n".
@@ -248,43 +258,17 @@ final class PhabricatorMySQLSetupCheck extends PhabricatorSetupCheck {
       }
     }
 
-    $bool_syntax = $ref->loadRawMySQLConfigValue('ft_boolean_syntax');
-    if ($bool_syntax != ' |-><()~*:""&^') {
-      if ($this->shouldUseMySQLSearchEngine()) {
-        $summary = pht(
-          'MySQL (on host "%s") is configured to search on fulltext indexes '.
-          'using "OR" by default. Using "AND" is usually the desired '.
-          'behaviour.',
-          $host_name);
+    // NOTE: The default value of "innodb_ft_min_token_size" is 3, which is
+    // a reasonable value, so we do not warn about it: if it is set to
+    // something else, the user adjusted it on their own.
 
-        $message = pht(
-          "Database host \"%s\" is configured to use the default Boolean ".
-          "search syntax when using fulltext indexes. This means searching ".
-          "for 'search words' will yield the query 'search OR words' ".
-          "instead of the desired 'search AND words'.\n\n".
-          "This might produce unexpected search results. \n\n".
-          "You can change this setting to a more sensible default. ".
-          "Alternatively, you can ignore this warning if ".
-          "using 'OR' is the desired behaviour. If you later plan ".
-          "to configure ElasticSearch, you can also ignore this warning: ".
-          "only MySQL fulltext search is affected.\n\n".
-          "To change this setting, add this to your %s file ".
-          "(in the %s section) and then restart %s:\n\n".
-          "%s\n",
-          $host_name,
-          phutil_tag('tt', array(), 'my.cnf'),
-          phutil_tag('tt', array(), '[mysqld]'),
-          phutil_tag('tt', array(), 'mysqld'),
-          phutil_tag('pre', array(), 'ft_boolean_syntax=\' |-><()~*:""&^\''));
-
-        $this->newIssue('mysql.ft_boolean_syntax')
-          ->setName(pht('MySQL is Using the Default Boolean Syntax'))
-          ->setSummary($summary)
-          ->setMessage($message)
-          ->setDatabaseRef($ref)
-          ->addMySQLConfig('ft_boolean_syntax');
-      }
-    }
+    // NOTE: We populate a stopwords table at "phabricator_search.stopwords",
+    // but the default InnoDB stopword list is pretty reasonable (36 words,
+    // versus 500+ in MyISAM). Just use the builtin list until we run into
+    // concrete issues with it. Users can switch to our stopword table with:
+    //
+    // [mysqld]
+    //   innodb_ft_server_stopword_table = phabricator_search/stopwords
 
     $innodb_pool = $ref->loadRawMySQLConfigValue('innodb_buffer_pool_size');
     $innodb_bytes = phutil_parse_bytes($innodb_pool);
@@ -395,8 +379,13 @@ final class PhabricatorMySQLSetupCheck extends PhabricatorSetupCheck {
   }
 
   protected function shouldUseMySQLSearchEngine() {
-    $search_engine = PhabricatorFulltextStorageEngine::loadEngine();
-    return ($search_engine instanceof PhabricatorMySQLFulltextStorageEngine);
+    $services = PhabricatorSearchService::getAllServices();
+    foreach ($services as $service) {
+      if ($service instanceof PhabricatorMySQLSearchHost) {
+        return true;
+      }
+    }
+    return false;
   }
 
 }

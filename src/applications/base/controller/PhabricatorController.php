@@ -98,7 +98,7 @@ abstract class PhabricatorController extends AphrontController {
 
 
       if (!$user->isLoggedIn()) {
-        $user->attachAlternateCSRFString(PhabricatorHash::digest($phsid));
+        $user->attachAlternateCSRFString(PhabricatorHash::weakDigest($phsid));
       }
 
       $request->setUser($user);
@@ -471,7 +471,7 @@ abstract class PhabricatorController extends AphrontController {
       ->setViewer($this->getViewer());
   }
 
-  public function newCurtainView($object) {
+  public function newCurtainView($object = null) {
     $viewer = $this->getViewer();
 
     $action_id = celerity_generate_unique_node_id();
@@ -483,17 +483,21 @@ abstract class PhabricatorController extends AphrontController {
     // NOTE: Applications (objects of class PhabricatorApplication) can't
     // currently be set here, although they don't need any of the extensions
     // anyway. This should probably work differently than it does, though.
-    if ($object instanceof PhabricatorLiskDAO) {
-      $action_list->setObject($object);
+    if ($object) {
+      if ($object instanceof PhabricatorLiskDAO) {
+        $action_list->setObject($object);
+      }
     }
 
     $curtain = id(new PHUICurtainView())
       ->setViewer($viewer)
       ->setActionList($action_list);
 
-    $panels = PHUICurtainExtension::buildExtensionPanels($viewer, $object);
-    foreach ($panels as $panel) {
-      $curtain->addPanel($panel);
+    if ($object) {
+      $panels = PHUICurtainExtension::buildExtensionPanels($viewer, $object);
+      foreach ($panels as $panel) {
+        $curtain->addPanel($panel);
+      }
     }
 
     return $curtain;
