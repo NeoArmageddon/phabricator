@@ -6,6 +6,10 @@ final class PhabricatorDiffusionApplication extends PhabricatorApplication {
     return pht('Diffusion');
   }
 
+  public function getMenuName() {
+    return pht('Repositories');
+  }
+
   public function getShortDescription() {
     return pht('Host and Browse Repositories');
   }
@@ -65,10 +69,11 @@ final class PhabricatorDiffusionApplication extends PhabricatorApplication {
         'branches/(?P<dblob>.*)' => 'DiffusionBranchTableController',
         'refs/(?P<dblob>.*)' => 'DiffusionRefTableController',
         'lint/(?P<dblob>.*)' => 'DiffusionLintController',
-        'commit/(?P<commit>[a-z0-9]+)/branches/'
-          => 'DiffusionCommitBranchesController',
-        'commit/(?P<commit>[a-z0-9]+)/tags/'
-          => 'DiffusionCommitTagsController',
+        'commit/(?P<commit>[a-z0-9]+)' => array(
+          '/?' => 'DiffusionCommitController',
+          '/branches/' => 'DiffusionCommitBranchesController',
+          '/tags/' => 'DiffusionCommitTagsController',
+        ),
         'compare/' => 'DiffusionCompareController',
         'manage/(?:(?P<panel>[^/]+)/)?'
           => 'DiffusionRepositoryManagePanelsController',

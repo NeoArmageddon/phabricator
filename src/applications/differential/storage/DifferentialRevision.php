@@ -15,6 +15,7 @@ final class DifferentialRevision extends DifferentialDAO
     PhabricatorDestructibleInterface,
     PhabricatorProjectInterface,
     PhabricatorFulltextInterface,
+    PhabricatorFerretInterface,
     PhabricatorConduitResultInterface,
     PhabricatorDraftInterface {
 
@@ -72,7 +73,7 @@ final class DifferentialRevision extends DifferentialDAO
       ->attachRepository(null)
       ->attachActiveDiff(null)
       ->attachReviewers(array())
-      ->setStatus(ArcanistDifferentialRevisionStatus::NEEDS_REVIEW);
+      ->setModernRevisionStatus(DifferentialRevisionStatus::NEEDS_REVIEW);
   }
 
   protected function getConfiguration() {
@@ -441,7 +442,7 @@ final class DifferentialRevision extends DifferentialDAO
 
     // For each path which the viewer owns a package for, find other packages
     // which that authority can be used to force-accept. Once we find a way to
-    // force-accept a package, we don't need to keep loooking.
+    // force-accept a package, we don't need to keep looking.
     $has_control = array();
     foreach ($force_map as $path => $spec) {
       $path_fragments = PhabricatorOwnersPackage::splitPath($path);
@@ -523,7 +524,6 @@ final class DifferentialRevision extends DifferentialDAO
 
     switch ($capability) {
       case PhabricatorPolicyCapability::CAN_VIEW:
-        $description[] = pht("A revision's reviewers can always view it.");
         $description[] = pht(
           'If a revision belongs to a repository, other users must be able '.
           'to view the repository in order to view the revision.');
@@ -613,43 +613,65 @@ final class DifferentialRevision extends DifferentialDAO
     return $this;
   }
 
+  public function setModernRevisionStatus($status) {
+    return $this->setStatus($status);
+  }
+
+  public function getModernRevisionStatus() {
+    return $this->getStatus();
+  }
+
+  public function getLegacyRevisionStatus() {
+    return $this->getStatusObject()->getLegacyKey();
+  }
+
   public function isClosed() {
-    return DifferentialRevisionStatus::isClosedStatus($this->getStatus());
+    return $this->getStatusObject()->isClosedStatus();
   }
 
   public function isAbandoned() {
-    $status_abandoned = ArcanistDifferentialRevisionStatus::ABANDONED;
-    return ($this->getStatus() == $status_abandoned);
+    return $this->getStatusObject()->isAbandoned();
   }
 
   public function isAccepted() {
-    $status_accepted = ArcanistDifferentialRevisionStatus::ACCEPTED;
-    return ($this->getStatus() == $status_accepted);
+    return $this->getStatusObject()->isAccepted();
+  }
+
+  public function isNeedsReview() {
+    return $this->getStatusObject()->isNeedsReview();
+  }
+
+  public function isNeedsRevision() {
+    return $this->getStatusObject()->isNeedsRevision();
+  }
+
+  public function isChangePlanned() {
+    return $this->getStatusObject()->isChangePlanned();
+  }
+
+  public function isPublished() {
+    return $this->getStatusObject()->isPublished();
+  }
+
+  public function isDraft() {
+    return $this->getStatusObject()->isDraft();
   }
 
   public function getStatusIcon() {
-    $map = array(
-      ArcanistDifferentialRevisionStatus::NEEDS_REVIEW
-        => 'fa-code grey',
-      ArcanistDifferentialRevisionStatus::NEEDS_REVISION
-        => 'fa-refresh red',
-      ArcanistDifferentialRevisionStatus::CHANGES_PLANNED
-        => 'fa-headphones red',
-      ArcanistDifferentialRevisionStatus::ACCEPTED
-        => 'fa-check green',
-      ArcanistDifferentialRevisionStatus::CLOSED
-        => 'fa-check-square-o black',
-      ArcanistDifferentialRevisionStatus::ABANDONED
-        => 'fa-plane black',
-    );
-
-    return idx($map, $this->getStatus());
+    return $this->getStatusObject()->getIcon();
   }
 
   public function getStatusDisplayName() {
+    return $this->getStatusObject()->getDisplayName();
+  }
+
+  public function getStatusIconColor() {
+    return $this->getStatusObject()->getIconColor();
+  }
+
+  public function getStatusObject() {
     $status = $this->getStatus();
-    return ArcanistDifferentialRevisionStatus::getNameForRevisionStatus(
-      $status);
+    return DifferentialRevisionStatus::newForStatus($status);
   }
 
   public function getFlag(PhabricatorUser $viewer) {
@@ -670,6 +692,14 @@ final class DifferentialRevision extends DifferentialDAO
   public function attachHasDraft(PhabricatorUser $viewer, $has_draft) {
     $this->drafts[$viewer->getCacheFragment()] = $has_draft;
     return $this;
+  }
+
+  public function shouldBroadcast() {
+    if (!$this->isDraft()) {
+      return true;
+    }
+
+    return false;
   }
 
 
@@ -861,7 +891,7 @@ final class DifferentialRevision extends DifferentialDAO
         self::TABLE_COMMIT,
         $this->getID());
 
-      // we have to do paths a little differentally as they do not have
+      // we have to do paths a little differently as they do not have
       // an id or phid column for delete() to act on
       $dummy_path = new DifferentialAffectedPath();
       queryfx(
@@ -883,6 +913,14 @@ final class DifferentialRevision extends DifferentialDAO
   }
 
 
+/* -(  PhabricatorFerretInterface  )----------------------------------------- */
+
+
+  public function newFerretEngine() {
+    return new DifferentialRevisionFerretEngine();
+  }
+
+
 /* -(  PhabricatorConduitResultInterface  )---------------------------------- */
 
 
@@ -896,13 +934,26 @@ final class DifferentialRevision extends DifferentialDAO
         ->setKey('authorPHID')
         ->setType('phid')
         ->setDescription(pht('Revision author PHID.')),
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('status')
+        ->setType('map<string, wild>')
+        ->setDescription(pht('Information about revision status.')),
     );
   }
 
   public function getFieldValuesForConduit() {
+    $status = $this->getStatusObject();
+    $status_info = array(
+      'value' => $status->getKey(),
+      'name' => $status->getDisplayName(),
+      'closed' => $status->isClosedStatus(),
+      'color.ansi' => $status->getANSIColor(),
+    );
+
     return array(
       'title' => $this->getTitle(),
       'authorPHID' => $this->getAuthorPHID(),
+      'status' => $status_info,
     );
   }
 

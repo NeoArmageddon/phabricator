@@ -116,7 +116,7 @@ final class DifferentialReviewersView extends AphrontView {
             }
           } else {
             $icon = 'fa-times-circle-o';
-            $color = 'bluegrey';
+            $color = 'red';
             if ($authority_name !== null) {
               $label = pht(
                 'Requested Changes to Prior Diff (by %s)',
@@ -150,6 +150,12 @@ final class DifferentialReviewersView extends AphrontView {
       $item->setIcon($icon, $color, $label);
       $item->setTarget($handle->renderHovercardLink());
 
+      if ($reviewer->isPackage()) {
+        if (!$reviewer->getChangesets()) {
+          $item->setNote(pht('(Owns No Changed Paths)'));
+        }
+      }
+
       $view->addItem($item);
     }
 
@@ -158,7 +164,6 @@ final class DifferentialReviewersView extends AphrontView {
 
   private function isCurrent($action_phid) {
     if (!$this->diff) {
-      echo "A\n";
       return true;
     }
 

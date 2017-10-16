@@ -20,6 +20,7 @@ final class PHUIButtonExample extends PhabricatorUIExample {
    $colors = array(
      null,
      PHUIButtonView::GREEN,
+     PHUIButtonView::RED,
      PHUIButtonView::GREY,
     );
    $sizes = array(null, PHUIButtonView::SMALL);
@@ -57,10 +58,12 @@ final class PHUIButtonExample extends PhabricatorUIExample {
       array(
         'text' => pht('Comment'),
         'icon' => 'fa-comment',
+        'dropdown' => true,
       ),
       array(
         'text' => pht('Give Token'),
         'icon' => 'fa-trophy',
+        'dropdown' => true,
       ),
       array(
         'text' => pht('Reverse Time'),
@@ -72,15 +75,19 @@ final class PHUIButtonExample extends PhabricatorUIExample {
       ),
       array(
         'icon' => 'fa-rocket',
+        'dropdown' => true,
       ),
       array(
         'icon' => 'fa-clipboard',
+        'dropdown' => true,
       ),
       array(
         'icon' => 'fa-upload',
+        'disabled' => true,
       ),
       array(
         'icon' => 'fa-street-view',
+        'selected' => true,
       ),
       array(
         'text' => pht('Copy "Quack" to Clipboard'),
@@ -94,7 +101,10 @@ final class PHUIButtonExample extends PhabricatorUIExample {
         ->setColor(PHUIButtonView::GREY)
         ->setIcon(idx($spec, 'icon'))
         ->setText(idx($spec, 'text'))
-        ->addClass(PHUI::MARGIN_SMALL_RIGHT);
+        ->setSelected(idx($spec, 'selected'))
+        ->setDisabled(idx($spec, 'disabled'))
+        ->addClass(PHUI::MARGIN_SMALL_RIGHT)
+        ->setDropdown(idx($spec, 'dropdown'));
 
       $copy = idx($spec, 'copy');
       if ($copy !== null) {
@@ -158,7 +168,7 @@ final class PHUIButtonExample extends PhabricatorUIExample {
         ->setSize(PHUIButtonView::BIG)
         ->setColor(PHUIButtonView::GREY)
         ->setIcon($image)
-        ->setText(pht('Login or Register'))
+        ->setText(pht('Log In or Register'))
         ->setSubtext($icon)
         ->addClass(PHUI::MARGIN_MEDIUM_RIGHT);
     }

@@ -12,10 +12,12 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     PhabricatorFlaggableInterface,
     PhabricatorMarkupInterface,
     PhabricatorDestructibleInterface,
+    PhabricatorDestructibleCodexInterface,
     PhabricatorProjectInterface,
     PhabricatorSpacesInterface,
     PhabricatorConduitResultInterface,
-    PhabricatorFulltextInterface {
+    PhabricatorFulltextInterface,
+    PhabricatorFerretInterface {
 
   /**
    * Shortest hash we'll recognize in raw "a829f32" form.
@@ -1873,7 +1875,7 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
 
 
   /**
-   * Retrieve the sevice URI for the device hosting this repository.
+   * Retrieve the service URI for the device hosting this repository.
    *
    * See @{method:newConduitClient} for a general discussion of interacting
    * with repository services. This method provides lower-level resolution of
@@ -2127,7 +2129,7 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     if ($this->isGit()) {
       // $_ENV does not populate in CLI contexts if "E" is missing from
       // "variables_order" in PHP config. Currently, we do not require this
-      // to be configured. Since it may not be, explictitly bring expected Git
+      // to be configured. Since it may not be, explicitly bring expected Git
       // environmental variables into scope. This list is not exhaustive, but
       // only lists variables with a known impact on commit hook behavior.
 
@@ -2557,6 +2559,14 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
   }
 
 
+/* -(  PhabricatorDestructibleCodexInterface  )------------------------------ */
+
+
+  public function newDestructibleCodex() {
+    return new PhabricatorRepositoryDestructibleCodex();
+  }
+
+
 /* -(  PhabricatorSpacesInterface  )----------------------------------------- */
 
 
@@ -2622,6 +2632,14 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
 
   public function newFulltextEngine() {
     return new PhabricatorRepositoryFulltextEngine();
+  }
+
+
+/* -(  PhabricatorFerretInterface  )----------------------------------------- */
+
+
+  public function newFerretEngine() {
+    return new PhabricatorRepositoryFerretEngine();
   }
 
 }
