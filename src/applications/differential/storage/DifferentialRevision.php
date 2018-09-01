@@ -35,6 +35,8 @@ final class DifferentialRevision extends DifferentialDAO
   protected $mailKey;
   protected $branchName;
   protected $repositoryPHID;
+  protected $activeDiffPHID;
+
   protected $viewPolicy = PhabricatorPolicies::POLICY_USER;
   protected $editPolicy = PhabricatorPolicies::POLICY_USER;
   protected $properties = array();
@@ -57,6 +59,10 @@ final class DifferentialRevision extends DifferentialDAO
   const RELATION_SUBSCRIBED   = 'subd';
 
   const PROPERTY_CLOSED_FROM_ACCEPTED = 'wasAcceptedBeforeClose';
+  const PROPERTY_DRAFT_HOLD = 'draft.hold';
+  const PROPERTY_HAS_BROADCAST = 'draft.broadcast';
+  const PROPERTY_LINES_ADDED = 'lines.added';
+  const PROPERTY_LINES_REMOVED = 'lines.removed';
 
   public static function initializeNewRevision(PhabricatorUser $actor) {
     $app = id(new PhabricatorApplicationQuery())
@@ -67,13 +73,19 @@ final class DifferentialRevision extends DifferentialDAO
     $view_policy = $app->getPolicy(
       DifferentialDefaultViewCapability::CAPABILITY);
 
+    if (PhabricatorEnv::getEnvConfig('phabricator.show-prototypes')) {
+      $initial_state = DifferentialRevisionStatus::DRAFT;
+    } else {
+      $initial_state = DifferentialRevisionStatus::NEEDS_REVIEW;
+    }
+
     return id(new DifferentialRevision())
       ->setViewPolicy($view_policy)
       ->setAuthorPHID($actor->getPHID())
       ->attachRepository(null)
       ->attachActiveDiff(null)
       ->attachReviewers(array())
-      ->setModernRevisionStatus(DifferentialRevisionStatus::NEEDS_REVIEW);
+      ->setModernRevisionStatus($initial_state);
   }
 
   protected function getConfiguration() {
@@ -702,6 +714,69 @@ final class DifferentialRevision extends DifferentialDAO
     return false;
   }
 
+  public function getHoldAsDraft() {
+    return $this->getProperty(self::PROPERTY_DRAFT_HOLD, false);
+  }
+
+  public function setHoldAsDraft($hold) {
+    return $this->setProperty(self::PROPERTY_DRAFT_HOLD, $hold);
+  }
+
+  public function getHasBroadcast() {
+    return $this->getProperty(self::PROPERTY_HAS_BROADCAST, false);
+  }
+
+  public function setHasBroadcast($has_broadcast) {
+    return $this->setProperty(self::PROPERTY_HAS_BROADCAST, $has_broadcast);
+  }
+
+  public function setAddedLineCount($count) {
+    return $this->setProperty(self::PROPERTY_LINES_ADDED, $count);
+  }
+
+  public function getAddedLineCount() {
+    return $this->getProperty(self::PROPERTY_LINES_ADDED);
+  }
+
+  public function setRemovedLineCount($count) {
+    return $this->setProperty(self::PROPERTY_LINES_REMOVED, $count);
+  }
+
+  public function getRemovedLineCount() {
+    return $this->getProperty(self::PROPERTY_LINES_REMOVED);
+  }
+
+  public function loadActiveBuilds(PhabricatorUser $viewer) {
+    $diff = $this->getActiveDiff();
+
+    $buildables = id(new HarbormasterBuildableQuery())
+      ->setViewer($viewer)
+      ->withContainerPHIDs(array($this->getPHID()))
+      ->withBuildablePHIDs(array($diff->getPHID()))
+      ->withManualBuildables(false)
+      ->execute();
+    if (!$buildables) {
+      return array();
+    }
+
+    return id(new HarbormasterBuildQuery())
+      ->setViewer($viewer)
+      ->withBuildablePHIDs(mpull($buildables, 'getPHID'))
+      ->withAutobuilds(false)
+      ->withBuildStatuses(
+        array(
+          HarbormasterBuildStatus::STATUS_INACTIVE,
+          HarbormasterBuildStatus::STATUS_PENDING,
+          HarbormasterBuildStatus::STATUS_BUILDING,
+          HarbormasterBuildStatus::STATUS_FAILED,
+          HarbormasterBuildStatus::STATUS_ABORTED,
+          HarbormasterBuildStatus::STATUS_ERROR,
+          HarbormasterBuildStatus::STATUS_PAUSED,
+          HarbormasterBuildStatus::STATUS_DEADLOCKED,
+        ))
+      ->execute();
+  }
+
 
 /* -(  HarbormasterBuildableInterface  )------------------------------------- */
 
@@ -938,6 +1013,18 @@ final class DifferentialRevision extends DifferentialDAO
         ->setKey('status')
         ->setType('map<string, wild>')
         ->setDescription(pht('Information about revision status.')),
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('repositoryPHID')
+        ->setType('phid?')
+        ->setDescription(pht('Revision repository PHID.')),
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('diffPHID')
+        ->setType('phid')
+        ->setDescription(pht('Active diff PHID.')),
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('summary')
+        ->setType('string')
+        ->setDescription(pht('Revision summary.')),
     );
   }
 
@@ -954,6 +1041,9 @@ final class DifferentialRevision extends DifferentialDAO
       'title' => $this->getTitle(),
       'authorPHID' => $this->getAuthorPHID(),
       'status' => $status_info,
+      'repositoryPHID' => $this->getRepositoryPHID(),
+      'diffPHID' => $this->getActiveDiffPHID(),
+      'summary' => $this->getSummary(),
     );
   }
 

@@ -9,6 +9,8 @@ final class DifferentialTransactionEditor
   private $didExpandInlineState = false;
   private $hasReviewTransaction = false;
   private $affectedPaths;
+  private $firstBroadcast = false;
+  private $wasDraft = false;
 
   public function getEditorApplicationClass() {
     return 'PhabricatorDifferentialApplication';
@@ -27,7 +29,7 @@ final class DifferentialTransactionEditor
   }
 
   public function isFirstBroadcast() {
-    return $this->getIsNewObject();
+    return $this->firstBroadcast;
   }
 
   public function getDiffUpdateTransaction(array $xactions) {
@@ -130,15 +132,16 @@ final class DifferentialTransactionEditor
 
         $diff = $this->requireDiff($xaction->getNewValue());
 
-        $object->setLineCount($diff->getLineCount());
+        $this->updateRevisionLineCounts($object, $diff);
+
         if ($this->repositoryPHIDOverride !== false) {
           $object->setRepositoryPHID($this->repositoryPHIDOverride);
         } else {
           $object->setRepositoryPHID($diff->getRepositoryPHID());
         }
-        $object->attachActiveDiff($diff);
 
-        // TODO: Update the `diffPHID` once we add that.
+        $object->attachActiveDiff($diff);
+        $object->setActiveDiffPHID($diff->getPHID());
         return;
     }
 
@@ -165,6 +168,8 @@ final class DifferentialTransactionEditor
           break;
       }
     }
+
+    $this->wasDraft = $object->isDraft();
 
     return parent::expandTransactions($object, $xactions);
   }
@@ -630,6 +635,10 @@ final class DifferentialTransactionEditor
     $phids = array();
     $phids[] = $object->getAuthorPHID();
     foreach ($object->getReviewers() as $reviewer) {
+      if ($reviewer->isResigned()) {
+        continue;
+      }
+
       $phids[] = $reviewer->getReviewerPHID();
     }
     return $phids;
@@ -1003,26 +1012,7 @@ final class DifferentialTransactionEditor
   protected function shouldApplyHeraldRules(
     PhabricatorLiskDAO $object,
     array $xactions) {
-
-    if ($this->getIsNewObject()) {
-      return true;
-    }
-
-    foreach ($xactions as $xaction) {
-      switch ($xaction->getTransactionType()) {
-        case DifferentialTransaction::TYPE_UPDATE:
-          if (!$this->getIsCloseByCommit()) {
-            return true;
-          }
-          break;
-        case DifferentialRevisionCommandeerTransaction::TRANSACTIONTYPE:
-          // When users commandeer revisions, we may need to trigger
-          // signatures or author-based rules.
-          return true;
-      }
-    }
-
-    return parent::shouldApplyHeraldRules($object, $xactions);
+    return true;
   }
 
   protected function didApplyHeraldRules(
@@ -1210,6 +1200,49 @@ final class DifferentialTransactionEditor
     $adapter = HeraldDifferentialRevisionAdapter::newLegacyAdapter(
       $revision,
       $revision->getActiveDiff());
+
+    // If the object is still a draft, prevent "Send me an email" and other
+    // similar rules from acting yet.
+    if (!$object->shouldBroadcast()) {
+      $adapter->setForbiddenAction(
+        HeraldMailableState::STATECONST,
+        DifferentialHeraldStateReasons::REASON_DRAFT);
+    }
+
+    // If this edit didn't actually change the diff (for example, a user
+    // edited the title or changed subscribers), prevent "Run build plan"
+    // and other similar rules from acting yet, since the build results will
+    // not (or, at least, should not) change unless the actual source changes.
+    // We also don't run Differential builds if the update was caused by
+    // discovering a commit, as the expectation is that Diffusion builds take
+    // over once things land.
+    $has_update = false;
+    $has_commit = false;
+
+    $type_update = DifferentialTransaction::TYPE_UPDATE;
+    foreach ($xactions as $xaction) {
+      if ($xaction->getTransactionType() != $type_update) {
+        continue;
+      }
+
+      if ($xaction->getMetadataValue('isCommitUpdate')) {
+        $has_commit = true;
+      } else {
+        $has_update = true;
+      }
+
+      break;
+    }
+
+    if ($has_commit) {
+      $adapter->setForbiddenAction(
+        HeraldBuildableState::STATECONST,
+        DifferentialHeraldStateReasons::REASON_LANDED);
+    } else if (!$has_update) {
+      $adapter->setForbiddenAction(
+        HeraldBuildableState::STATECONST,
+        DifferentialHeraldStateReasons::REASON_UNCHANGED);
+    }
 
     return $adapter;
   }
@@ -1425,11 +1458,13 @@ final class DifferentialTransactionEditor
   protected function getCustomWorkerState() {
     return array(
       'changedPriorToCommitURI' => $this->changedPriorToCommitURI,
+      'firstBroadcast' => $this->firstBroadcast,
     );
   }
 
   protected function loadCustomWorkerState(array $state) {
     $this->changedPriorToCommitURI = idx($state, 'changedPriorToCommitURI');
+    $this->firstBroadcast = idx($state, 'firstBroadcast');
     return $this;
   }
 
@@ -1532,18 +1567,30 @@ final class DifferentialTransactionEditor
   protected function didApplyTransactions($object, array $xactions) {
     // If a draft revision has no outstanding builds and we're automatically
     // making drafts public after builds finish, make the revision public.
-    $auto_undraft = true;
+    $auto_undraft = !$object->getHoldAsDraft();
 
     if ($object->isDraft() && $auto_undraft) {
       $active_builds = $this->hasActiveBuilds($object);
       if (!$active_builds) {
+        // When Harbormaster moves a revision out of the draft state, we
+        // attribute the action to the revision author since this is more
+        // natural and more useful.
+        $author_phid = $object->getAuthorPHID();
+
+        // Additionally, we change the acting PHID for the transaction set
+        // to the author if it isn't already a user so that mail comes from
+        // the natural author.
+        $acting_phid = $this->getActingAsPHID();
+        $user_type = PhabricatorPeopleUserPHIDType::TYPECONST;
+        if (phid_get_type($acting_phid) != $user_type) {
+          $this->setActingAsPHID($author_phid);
+        }
+
         $xaction = $object->getApplicationTransactionTemplate()
+          ->setAuthorPHID($author_phid)
           ->setTransactionType(
             DifferentialRevisionRequestReviewTransaction::TRANSACTIONTYPE)
-          ->setOldValue(false)
           ->setNewValue(true);
-
-        $xaction = $this->populateTransaction($object, $xaction);
 
         // If we're creating this revision and immediately moving it out of
         // the draft state, mark this as a create transaction so it gets
@@ -1553,15 +1600,36 @@ final class DifferentialTransactionEditor
           $xaction->setIsCreateTransaction(true);
         }
 
-        $object->openTransaction();
-          $object
-            ->setStatus(DifferentialRevisionStatus::NEEDS_REVIEW)
-            ->save();
+        // Queue this transaction and apply it separately after the current
+        // batch of transactions finishes so that Herald can fire on the new
+        // revision state. See T13027 for discussion.
+        $this->queueTransaction($xaction);
+      }
+    }
 
-          $xaction->save();
-        $object->saveTransaction();
+    // If the revision is new or was a draft, and is no longer a draft, we
+    // might be sending the first email about it.
 
-        $xactions[] = $xaction;
+    // This might mean it was created directly into a non-draft state, or
+    // it just automatically undrafted after builds finished, or a user
+    // explicitly promoted it out of the draft state with an action like
+    // "Request Review".
+
+    // If we haven't sent any email about it yet, mark this email as the first
+    // email so the mail gets enriched with "SUMMARY" and "TEST PLAN".
+
+    $is_new = $this->getIsNewObject();
+    $was_draft = $this->wasDraft;
+
+    if (!$object->isDraft() && ($was_draft || $is_new)) {
+      if (!$object->getHasBroadcast()) {
+        // Mark this as the first broadcast we're sending about the revision
+        // so mail can generate specially.
+        $this->firstBroadcast = true;
+
+        $object
+          ->setHasBroadcast(true)
+          ->save();
       }
     }
 
@@ -1570,60 +1638,34 @@ final class DifferentialTransactionEditor
 
   private function hasActiveBuilds($object) {
     $viewer = $this->requireActor();
-    $diff = $object->getActiveDiff();
 
-    $buildables = id(new HarbormasterBuildableQuery())
-      ->setViewer($viewer)
-      ->withContainerPHIDs(array($object->getPHID()))
-      ->withBuildablePHIDs(array($diff->getPHID()))
-      ->withManualBuildables(false)
-      ->execute();
-    if (!$buildables) {
-      return false;
-    }
-
-    $builds = id(new HarbormasterBuildQuery())
-      ->setViewer($viewer)
-      ->withBuildablePHIDs(mpull($buildables, 'getPHID'))
-      ->withBuildStatuses(
-        array(
-          HarbormasterBuildStatus::STATUS_INACTIVE,
-          HarbormasterBuildStatus::STATUS_PENDING,
-          HarbormasterBuildStatus::STATUS_BUILDING,
-          HarbormasterBuildStatus::STATUS_FAILED,
-          HarbormasterBuildStatus::STATUS_ABORTED,
-          HarbormasterBuildStatus::STATUS_ERROR,
-          HarbormasterBuildStatus::STATUS_PAUSED,
-          HarbormasterBuildStatus::STATUS_DEADLOCKED,
-        ))
-      ->needBuildTargets(true)
-      ->execute();
+    $builds = $object->loadActiveBuilds($viewer);
     if (!$builds) {
-      return false;
-    }
-
-    $active = array();
-    foreach ($builds as $key => $build) {
-      foreach ($build->getBuildTargets() as $target) {
-        if ($target->isAutotarget()) {
-          // Ignore autotargets when looking for active of failed builds. If
-          // local tests fail and you continue anyway, you don't need to
-          // double-confirm them.
-          continue;
-        }
-
-        // This build has at least one real target that's doing something.
-        $active[$key] = $build;
-        break;
-      }
-    }
-
-    if (!$active) {
       return false;
     }
 
     return true;
   }
 
+  private function updateRevisionLineCounts(
+    DifferentialRevision $revision,
+    DifferentialDiff $diff) {
+
+    $revision->setLineCount($diff->getLineCount());
+
+    $conn = $revision->establishConnection('r');
+
+    $row = queryfx_one(
+      $conn,
+      'SELECT SUM(addLines) A, SUM(delLines) D FROM %T
+        WHERE diffID = %d',
+      id(new DifferentialChangeset())->getTableName(),
+      $diff->getID());
+
+    if ($row) {
+      $revision->setAddedLineCount((int)$row['A']);
+      $revision->setRemovedLineCount((int)$row['D']);
+    }
+  }
 
 }

@@ -40,6 +40,7 @@ final class PhabricatorFile extends PhabricatorFileDAO
   const METADATA_PROFILE = 'profile';
   const METADATA_STORAGE = 'storage';
   const METADATA_INTEGRITY = 'integrity';
+  const METADATA_CHUNK = 'chunk';
 
   const STATUS_ACTIVE = 'active';
   const STATUS_DELETED = 'deleted';
@@ -133,6 +134,9 @@ final class PhabricatorFile extends PhabricatorFileDAO
         'key_builtin' => array(
           'columns' => array('builtinKey'),
           'unique' => true,
+        ),
+        'key_engine' => array(
+          'columns' => array('storageEngine', 'storageHandle(64)'),
         ),
       ),
     ) + parent::getConfiguration();
@@ -407,7 +411,7 @@ final class PhabricatorFile extends PhabricatorFileDAO
     try {
       $file->updateDimensions(false);
     } catch (Exception $ex) {
-      // Do nothing
+      // Do nothing.
     }
 
     $file->saveAndIndex();
@@ -1054,9 +1058,20 @@ final class PhabricatorFile extends PhabricatorFileDAO
       throw new Exception(pht('Cannot retrieve image information.'));
     }
 
+    if ($this->getIsChunk()) {
+      throw new Exception(
+        pht('Refusing to assess image dimensions of file chunk.'));
+    }
+
+    $engine = $this->instantiateStorageEngine();
+    if ($engine->isChunkEngine()) {
+      throw new Exception(
+        pht('Refusing to assess image dimensions of chunked file.'));
+    }
+
     $data = $this->loadFileData();
 
-    $img = imagecreatefromstring($data);
+    $img = @imagecreatefromstring($data);
     if ($img === false) {
       throw new Exception(pht('Error when decoding image.'));
     }
@@ -1252,6 +1267,15 @@ final class PhabricatorFile extends PhabricatorFileDAO
     return $this;
   }
 
+  public function getIsChunk() {
+    return idx($this->metadata, self::METADATA_CHUNK);
+  }
+
+  public function setIsChunk($value) {
+    $this->metadata[self::METADATA_CHUNK] = $value;
+    return $this;
+  }
+
   public function setIntegrityHash($integrity_hash) {
     $this->metadata[self::METADATA_INTEGRITY] = $integrity_hash;
     return $this;
@@ -1336,6 +1360,7 @@ final class PhabricatorFile extends PhabricatorFileDAO
         'mime-type' => 'optional string',
         'builtin' => 'optional string',
         'storageEngines' => 'optional list<PhabricatorFileStorageEngine>',
+        'chunk' => 'optional bool',
       ));
 
     $file_name = idx($params, 'name');
@@ -1411,6 +1436,11 @@ final class PhabricatorFile extends PhabricatorFileDAO
     $mime_type = idx($params, 'mime-type');
     if ($mime_type) {
       $this->setMimeType($mime_type);
+    }
+
+    $is_chunk = idx($params, 'chunk');
+    if ($is_chunk) {
+      $this->setIsChunk(true);
     }
 
     return $this;
